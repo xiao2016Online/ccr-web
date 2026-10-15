@@ -11,43 +11,51 @@
 # ---------- 阶段 1: 前端 ----------
 FROM node:22-alpine AS ui
 WORKDIR /build
-RUN corepack enable
+# pnpm 版本钉死: 该 lockfile 的 pnpm.overrides 只有较新的 pnpm 仍从 package.json 读取,
+# 与本地验证过的版本保持一致 (corepack 自带版本会忽略该字段导致 frozen 安装失败)
+RUN npm i -g pnpm@10.33.2 --registry=https://registry.npmmirror.com
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm config set registry https://registry.npmmirror.com && pnpm install --frozen-lockfile
 COPY index.html postcss.config.js tsconfig.json tsconfig.node.json vite.config.ts components.json ./
 COPY src ./src
 RUN pnpm build
 
 # ---------- 阶段 2: Rust 编译 ----------
-# cargo-chef 做依赖层缓存: 源码改动不重编几百个第三方 crate
-FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
-
-FROM chef AS planner
-WORKDIR /app
-COPY src-tauri ./src-tauri
-WORKDIR /app/src-tauri
-RUN cargo chef prepare --recipe-path recipe.json
-
-FROM chef AS build
-RUN apt-get update \
+FROM rust:1-slim AS build
+# 国内网络: 换 Debian 源 (USTC) 与 crates.io 源 (rsproxy)
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential cmake ninja-build perl pkg-config ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /usr/local/cargo \
+    && printf '[source.crates-io]\nreplace-with = "rsproxy"\n\n[source.rsproxy]\nregistry = "sparse+https://rsproxy.cn/index/"\n' \
+       > /usr/local/cargo/config.toml
+WORKDIR /app
+
+# 依赖层缓存: 先用占位源码按同一份 Cargo.toml/lock 把全部第三方依赖编译好,
+# 之后源码变动只重编 cc-router 本体。cargo 会编译 manifest 里所有非可选依赖,
+# 所以占位 lib/bin 即可覆盖完整依赖树。
+COPY src-tauri/Cargo.toml src-tauri/Cargo.lock ./src-tauri/
+COPY src-tauri/crates ./src-tauri/crates
+RUN mkdir -p src-tauri/src/bin \
+    && echo "pub fn placeholder() {}" > src-tauri/src/lib.rs \
+    && echo "fn main() {}" > src-tauri/src/bin/ccr-server.rs
 WORKDIR /app/src-tauri
-COPY --from=planner /app/src-tauri/recipe.json recipe.json
-# 依赖编译缓存层 (含 proc-macro; TUI 成员 crate 也在 workspace 内一并缓存)
-RUN cargo chef cook --release --no-default-features --features server --recipe-path recipe.json
+RUN cargo build --release --no-default-features --features server --bin ccr-server
 
 WORKDIR /app
 COPY src-tauri ./src-tauri
 COPY --from=ui /build/dist ./src-tauri/ui-dist
 WORKDIR /app/src-tauri
-# rust-embed 内嵌 ui-dist (release 构建期写进二进制)
-RUN touch src-tauri/ui-dist/.keep && cargo build --release --no-default-features --features server --bin ccr-server
+# rust-embed 在 release 构建期把 ui-dist 内嵌进二进制
+RUN cargo build --release --no-default-features --features server --bin ccr-server
 
 # ---------- 阶段 3: 运行层 ----------
-FROM debian:bookworm-slim
-RUN apt-get update \
+FROM debian:trixie-slim
+# 国内网络: 换 Debian 源后再装运行时依赖
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 10001 ccrouter \

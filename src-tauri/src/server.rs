@@ -83,6 +83,8 @@ fn seed_server_settings(settings: &mut Settings, first_run: bool) {
     settings.web_ui_auth_enabled = true;
     settings.tui_enabled = false;
     settings.autostart = false;
+    // 反向代理拓扑属于部署环境而非用户偏好: 每次启动都按环境变量对齐。
+    settings.trust_proxy = std::env::var("CCR_TRUST_PROXY").is_ok();
     if first_run {
         if let Ok(lang) = std::env::var("CCR_LANG") {
             if !lang.trim().is_empty() {
@@ -102,9 +104,6 @@ fn seed_server_settings(settings: &mut Settings, first_run: bool) {
                 Ok(p) if p > 0 => settings.https_port = p,
                 _ => warn!(%https, "CCR_HTTPS_PORT 不是合法端口, 使用默认 23457"),
             }
-        }
-        if std::env::var("CCR_TRUST_PROXY").is_ok() {
-            settings.trust_proxy = true;
         }
         // 首启允许用环境变量指定代理访问令牌 (给客户端工具用); 之后一律走 UI 轮换。
         if let Ok(token) = std::env::var("CCR_AUTH_TOKEN") {
