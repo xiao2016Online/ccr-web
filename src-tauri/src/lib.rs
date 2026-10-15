@@ -1,8 +1,14 @@
-//! cc-router 桌面 app 入口。
+//! cc-router 入口, 双形态:
 //!
-//! 这里的 `run()` 是 Tauri 生命周期起点；桌面壳和代理服务、SQLite、Provider 加载
-//! 全部在 `setup()` 中完成初始化。模块粒度见 plan §2。
+//! - 桌面 (feature = "desktop", 默认): `run()` 是 Tauri 生命周期起点; 桌面壳和代理
+//!   服务、SQLite、Provider 加载全部在 `setup()` 中完成初始化。
+//! - 服务器 (--no-default-features --features server): 无 Tauri 壳, 入口是
+//!   `bin/ccr-server.rs` → [`server::run_server`], 见 `server.rs`。
+//!
+//! 两种形态共享同一条启动序列 [`bootstrap_core`]: DB → Provider → Settings →
+//! 订阅运行时 → 代理; 区别只在壳 (AppHandle 的构造、托盘 / 自启动 / runtime.json)。
 
+pub mod auth_admin;
 pub mod backup;
 pub mod commands;
 pub mod db;
@@ -13,26 +19,54 @@ pub mod observability;
 pub mod provider;
 pub mod proxy;
 pub mod release_notes;
+#[cfg(feature = "desktop")]
 pub mod runtime_file;
+#[cfg(feature = "server")]
+pub mod server;
 pub mod settings;
 pub mod state;
 pub mod subscription;
 pub mod tls;
+#[cfg(feature = "desktop")]
 pub mod tray;
-#[cfg(test)]
+#[cfg(all(test, feature = "desktop"))]
 mod tui_contract;
 pub mod tui_install;
+#[cfg(feature = "desktop")]
 pub mod updater_source;
 pub mod virtual_model;
+#[cfg(feature = "desktop")]
 pub mod window;
 
 use std::sync::Arc;
 
+#[cfg(feature = "desktop")]
 use tauri::Manager;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info};
 
-use crate::state::AppState;
+use crate::settings::model::Settings;
+use crate::state::{AppHandle, AppState};
+
+/// 后台任务启动口。桌面 = tauri::async_runtime (Tauri 托管的 tokio 运行时);
+/// 服务器 = 纯 tokio。调用处代码两形态一致。
+#[cfg(feature = "desktop")]
+fn spawn_task<F>(fut: F)
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tauri::async_runtime::spawn(fut);
+}
+
+#[cfg(not(feature = "desktop"))]
+fn spawn_task<F>(fut: F)
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::spawn(fut);
+}
 
 /// macOS: 用户从 Dock / Spotlight / Launchpad / Finder 再次打开 cc-router 时,
 /// LaunchServices 不会起新进程, 只给已有实例发 applicationShouldHandleReopen
@@ -42,7 +76,7 @@ use crate::state::AppState;
 ///
 /// 不判 `has_visible_windows`: 窗口被 hide 之后 AppKit 认不认它是 "visible window"
 /// 不可靠, 而 `reveal_window` 对已可见窗口是幂等的, 无脑呼出更稳.
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "desktop"))]
 fn on_run_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
     if matches!(event, tauri::RunEvent::Reopen { .. }) {
         if let Some(win) = app.get_webview_window("main") {
@@ -51,9 +85,11 @@ fn on_run_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(not(target_os = "macos"), feature = "desktop"))]
 fn on_run_event(_app: &tauri::AppHandle, _event: &tauri::RunEvent) {}
 
+/// 桌面入口。服务器形态的入口在 `bin/ccr-server.rs` → [`server::run_server`]。
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -153,6 +189,7 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::generate_new_token,
+            commands::settings::change_admin_password,
             commands::release_notes::get_release_notes,
             commands::release_notes::mark_release_notes_seen,
             commands::proxy::proxy_status,
@@ -209,22 +246,15 @@ pub fn run() {
     app.run(|handle, event| on_run_event(handle, &event));
 }
 
+/// 桌面形态的启动包装: autostart 反向同步是桌面专属 (LaunchAgent / Registry),
+/// 其余序列与服务器完全一致。
+#[cfg(feature = "desktop")]
 async fn bootstrap(
     handle: tauri::AppHandle,
     app_data_dir: std::path::PathBuf,
 ) -> anyhow::Result<AppState> {
-    // 1. DB
-    let db_path = app_data_dir.join("config.db");
-    let pool = db::init_pool(&db_path).await?;
-    db::run_migrations(&pool).await?;
-
-    // 2. Provider YAML 加载 (编译期内嵌, 见 build.rs)
-    let providers = provider::loader::load_all()?;
-    info!(provider_count = providers.len(), "providers loaded");
-
-    // 3. Settings
+    // Settings (含 auth_token 生成)
     let mut settings = settings::load_or_default(&app_data_dir).await?;
-    // 首次启动或老用户升级时,auth_token 为空 → 生成并立即 save。
     settings::ensure_auth_token(&app_data_dir, &mut settings).await?;
 
     // 3b. autostart 反向同步: plugin 真实状态 (LaunchAgent / Registry / .desktop) 为真相源,
@@ -244,6 +274,26 @@ async fn bootstrap(
         }
     }
 
+    bootstrap_core(app_data_dir, Some(handle), settings).await
+}
+
+/// 桌面 / 服务器共用的启动序列。`app_handle`: 桌面入口传入 Tauri 句柄;
+/// 服务器入口传 None, 由这里用 SSE 广播发送端构造轻量壳。
+/// `settings` 由入口先 load + 形态相关的播种 (桌面: autostart 同步; 服务器: 安全默认)。
+async fn bootstrap_core(
+    app_data_dir: std::path::PathBuf,
+    app_handle: Option<AppHandle>,
+    settings: Settings,
+) -> anyhow::Result<AppState> {
+    // 1. DB
+    let db_path = app_data_dir.join("config.db");
+    let pool = db::init_pool(&db_path).await?;
+    db::run_migrations(&pool).await?;
+
+    // 2. Provider YAML 加载 (编译期内嵌, 见 build.rs)
+    let providers = provider::loader::load_all()?;
+    info!(provider_count = providers.len(), "providers loaded");
+
     // 4. 订阅运行时状态初始化 (load_runtime 内部已装填 token 限额用量, 见 store.rs)
     let subscription_map = subscription::store::load_runtime(&pool).await?;
 
@@ -255,33 +305,14 @@ async fn bootstrap(
     // 6a. 事件流 channel (kind=subscription_state_change/system_error/quota_reached)
     // 需先于请求日志 channel 建好: request_log consumer 复用同一个 event_tx 发 quota_reached 事件。
     let (event_tx, event_rx) = mpsc::channel(1024);
-    let event_pool = pool.clone();
-    let event_handle = handle.clone();
-    tauri::async_runtime::spawn(async move {
-        observability::events::run_consumer(event_pool, event_rx, event_handle).await;
-    });
 
     // 6b. 请求日志 channel
     let (log_tx, log_rx) = mpsc::channel(1024);
-    let log_pool = pool.clone();
-    let log_handle = handle.clone();
-    let log_subs = subscriptions_arc.clone();
-    let log_event_tx = event_tx.clone();
-    tauri::async_runtime::spawn(async move {
-        observability::request_log::run_consumer(
-            log_pool,
-            log_rx,
-            log_handle,
-            log_subs,
-            log_event_tx,
-        )
-        .await;
-    });
 
     // 6c. 调试模式 body dump channel (调试模式开启时由 pipeline / sse 插桩点投递)
     let (body_dump_tx, body_dump_rx) = mpsc::channel(256);
     let dump_dir = observability::body_dump::dump_dir(&app_data_dir);
-    tauri::async_runtime::spawn(async move {
+    spawn_task(async move {
         observability::body_dump::run_consumer(body_dump_rx, dump_dir).await;
     });
 
@@ -298,7 +329,15 @@ async fn bootstrap(
     let chatgpt_oauth = Arc::new(oauth::chatgpt::ChatGptOAuthManager::new(pool.clone()));
     let kiro_oauth = Arc::new(oauth::kiro::KiroOAuthManager::new(pool.clone()));
 
+    // SSE 事件广播先于 AppHandle 构造: 服务器形态的 AppHandle 直接持有广播发送端。
+    let (ui_tx, _) = tokio::sync::broadcast::channel(proxy::web::events::UI_EVENT_CAPACITY);
+    #[cfg(feature = "desktop")]
+    let app_handle = app_handle.expect("desktop bootstrap 必须传入 Tauri AppHandle");
+    #[cfg(not(feature = "desktop"))]
+    let app_handle = app_handle.unwrap_or_else(|| AppHandle::new(ui_tx.clone()));
+
     let state = AppState {
+        data_dir: app_data_dir,
         db: pool,
         providers: Arc::new(providers),
         subscriptions: subscriptions_arc,
@@ -316,7 +355,7 @@ async fn bootstrap(
         probe_client,
         chatgpt_oauth,
         kiro_oauth,
-        app_handle: handle.clone(),
+        app_handle,
         session_affinity: Arc::new(std::sync::Mutex::new(
             virtual_model::affinity::AffinityTable::default(),
         )),
@@ -326,16 +365,40 @@ async fn bootstrap(
         web_login_guard: Arc::new(std::sync::Mutex::new(
             proxy::web::auth::LoginGuard::new_default(),
         )),
-        ui_events: tokio::sync::broadcast::channel(proxy::web::events::UI_EVENT_CAPACITY).0,
-        local_secret: Arc::new(runtime_file::generate_secret()),
+        ui_events: ui_tx,
+        local_secret: Arc::new(generate_local_secret()),
     };
 
-    // 7b. 网页界面事件桥: Tauri emit → broadcast (SSE 订阅方在 proxy/web/events.rs)
-    proxy::web::events::install_bridge(&handle, state.ui_events.clone());
+    // 7b. 网页界面事件桥: Tauri emit → broadcast (SSE 订阅方在 proxy/web/events.rs)。
+    // 服务器形态没有 Tauri 事件层: emit 已经直接进广播, 无需桥。
+    #[cfg(feature = "desktop")]
+    proxy::web::events::install_bridge(&state.app_handle, state.ui_events.clone());
+
+    // 6. 日志 / 事件 consumer (在 state 建好之后起, 它们要拿 app_handle 发界面事件)
+    let event_pool = state.db.clone();
+    let event_handle = state.app_handle.clone();
+    spawn_task(async move {
+        observability::events::run_consumer(event_pool, event_rx, event_handle).await;
+    });
+
+    let log_pool = state.db.clone();
+    let log_handle = state.app_handle.clone();
+    let log_subs = state.subscriptions.clone();
+    let log_event_tx = state.event_log_tx.clone();
+    spawn_task(async move {
+        observability::request_log::run_consumer(
+            log_pool,
+            log_rx,
+            log_handle,
+            log_subs,
+            log_event_tx,
+        )
+        .await;
+    });
 
     // 8. 启动代理. 失败不 fatal: 界面显示「未运行」与原因, 用户可点「启动代理服务」重试.
     let proxy_state = state.clone();
-    tauri::async_runtime::spawn(async move {
+    spawn_task(async move {
         let hooks = proxy::server::AppHooks(proxy_state.clone());
         let outcome = proxy_state.proxy.restart(hooks).await;
         if outcome != proxy::controller::RestartOutcome::Applied {
@@ -345,16 +408,22 @@ async fn bootstrap(
 
     // 9. 启动订阅巡检器:每 10min 扫描被虚拟模型引用且异常的订阅, ping 通过则复活
     let recheck_state = state.clone();
-    tauri::async_runtime::spawn(async move {
+    spawn_task(async move {
         subscription::recheck_worker::run(recheck_state).await;
     });
 
     let cleanup_pool = state.db.clone();
     let cleanup_settings = state.settings.clone();
     let cleanup_event_tx = state.event_log_tx.clone();
-    tauri::async_runtime::spawn(async move {
+    spawn_task(async move {
         observability::cleanup::run(cleanup_pool, cleanup_settings, cleanup_event_tx).await;
     });
 
     Ok(state)
+}
+
+/// 「本机通行」密钥。桌面写入 runtime.json 给 TUI; 服务器没有 TUI 通道,
+/// 生成随机值仅为字段完整性 (tui_enabled 恒 false, 本机通行不可达)。
+fn generate_local_secret() -> String {
+    uuid::Uuid::new_v4().simple().to_string()
 }

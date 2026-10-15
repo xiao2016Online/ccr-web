@@ -1,7 +1,7 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::AppHandle;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
@@ -18,9 +18,65 @@ use crate::subscription::model::SubscriptionRuntime;
 use crate::virtual_model::affinity::AffinityTable;
 use crate::virtual_model::model::{VirtualModelConfig, VirtualModelName};
 
+// ---------------------------------------------------------------------------
+// 桌面 / 服务器双形态兼容层。
+//
+// 桌面 (feature = "desktop", 默认): 进程由 Tauri 壳拉起, `AppHandle` 就是
+// tauri::AppHandle —— 事件经 Tauri emit 再由 proxy::web::events::install_bridge
+// 转投 SSE 广播; `State` 是 invoke 通道的提取器。
+//
+// 服务器 (--no-default-features --features server): 无 Tauri 壳, `AppHandle`
+// 换成一个只装着 SSE 广播发送端的轻量壳, emit 直接进广播 (少一跳);
+// `State` 退化为 &AppState, 由 /ui/api/cmd 分发器直接传入。
+// 两种形态下业务代码的调用写法完全一致 (app.emit(...) / state.db ...)。
+// ---------------------------------------------------------------------------
+
+/// 事件发射与进程句柄。桌面 = tauri::AppHandle;服务器 = 轻量壳 (见下方 inherent emit)。
+#[cfg(feature = "desktop")]
+pub type AppHandle = tauri::AppHandle;
+
+#[cfg(not(feature = "desktop"))]
+#[derive(Clone)]
+pub struct AppHandle {
+    ui_events: tokio::sync::broadcast::Sender<UiEvent>,
+}
+
+#[cfg(not(feature = "desktop"))]
+impl AppHandle {
+    pub fn new(ui_events: tokio::sync::broadcast::Sender<UiEvent>) -> Self {
+        Self { ui_events }
+    }
+
+    /// 与桌面 `tauri::Emitter::emit` 同形的事件发射口: payload 序列化后写进
+    /// /ui/api/events 的 SSE 广播。无订阅者时 send 返回 Err, 与桌面行为一致地忽略。
+    pub fn emit<T: serde::Serialize>(
+        &self,
+        name: &str,
+        payload: T,
+    ) -> Result<(), serde_json::Error> {
+        let payload = serde_json::to_string(&payload)?;
+        let _ = self.ui_events.send(UiEvent {
+            name: name.to_string(),
+            payload,
+        });
+        Ok(())
+    }
+}
+
+/// 命令层状态提取器。桌面 = `tauri::State` (invoke 通道);服务器 = `&AppState`
+/// (HTTP `/ui/api/cmd` 通道)。两者都 Deref 到 AppState, 命令函数体无感。
+#[cfg(feature = "desktop")]
+pub type State<'a, T = AppState> = tauri::State<'a, T>;
+
+#[cfg(not(feature = "desktop"))]
+pub type State<'a, T = AppState> = &'a T;
+
 /// 全局 app 状态。所有 Tauri commands、代理服务、后台任务都共享这份状态。
 #[derive(Clone)]
 pub struct AppState {
+    /// 数据目录 (config.db / settings.json / logs / TLS 所在)。
+    /// 桌面 = OS app data dir;服务器 = CCR_DATA_DIR (或其缺省值), 启动时解析一次。
+    pub data_dir: PathBuf,
     pub db: sqlx::SqlitePool,
     pub providers: Arc<HashMap<String, Provider>>,
     pub subscriptions: Arc<RwLock<HashMap<Uuid, Arc<RwLock<SubscriptionRuntime>>>>>,

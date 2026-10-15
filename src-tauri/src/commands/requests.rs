@@ -7,7 +7,7 @@ use std::io::Write;
 use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use tauri::State;
+use crate::state::State;
 
 use crate::error::AppResult;
 use crate::state::AppState;
@@ -124,7 +124,7 @@ fn build_filter_clause(filters: &RequestLogFilters) -> (String, Vec<String>) {
     (format!(" WHERE {}", conds.join(" AND ")), binds)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_requests(
     state: State<'_, AppState>,
     page: u32,
@@ -321,7 +321,7 @@ pub async fn write_csv<W: Write>(
 /// 按当前筛选条件把请求日志导出为 CSV 文件 (路径由前端 save dialog 提供)。
 /// 流式逐行写 BufWriter, 不整表载入内存; 返回导出的行数。
 /// 文件头带 UTF-8 BOM, Excel 直接打开中文不乱码。
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn export_requests_csv(
     state: State<'_, AppState>,
     path: String,
@@ -334,7 +334,7 @@ pub async fn export_requests_csv(
 }
 
 /// 网页端导出: 返回 CSV 文本 (含 BOM), 由浏览器下载. Task 13 与 export_requests_csv 合并实现.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn export_requests_csv_text(
     state: State<'_, AppState>,
     filters: Option<RequestLogFilters>,
@@ -347,7 +347,7 @@ pub async fn export_requests_csv_text(
 /// 返回前端可在筛选器里展示的「已支持识别的 client tool」白名单。
 /// 数据源是 [`crate::proxy::client_fingerprint::SUPPORTED_TOOLS`], 后端单一信息源,
 /// 前端硬编码的 i18n 文案需手工同步 (类比 `ProviderLogo BRAND_MAP`).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_supported_client_tools() -> AppResult<Vec<&'static str>> {
     Ok(crate::proxy::client_fingerprint::SUPPORTED_TOOLS.to_vec())
 }
@@ -395,7 +395,7 @@ pub(crate) async fn query_client_activity(
 
 /// 哪些客户端最近确实走了 cc-router (被动流量检测, 零配置)。
 /// 从未发过请求的客户端不会出现在结果里, 前端按「未接入」灰显。
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_client_activity(state: State<'_, AppState>) -> AppResult<Vec<ClientActivityDto>> {
     query_client_activity(&state.db).await.map_err(Into::into)
 }

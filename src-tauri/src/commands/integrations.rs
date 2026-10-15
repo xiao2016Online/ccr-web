@@ -2,18 +2,18 @@
 //!
 //! Claude Code (~/.claude/settings.json).
 
-use tauri::State;
+use crate::state::State;
 
 use crate::error::AppResult;
 use crate::integrations::claude_code::{self, InspectResult, ReadResult, WriteOutcome};
 use crate::state::AppState;
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn read_claude_code_settings(_state: State<'_, AppState>) -> AppResult<ReadResult> {
     claude_code::read().await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn inspect_claude_code_settings(
     state: State<'_, AppState>,
 ) -> AppResult<InspectResult> {
@@ -26,7 +26,7 @@ pub async fn inspect_claude_code_settings(
     claude_code::inspect(&base_url, token.as_str(), auth_required).await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn write_claude_code_settings(
     state: State<'_, AppState>,
     new_content: String,

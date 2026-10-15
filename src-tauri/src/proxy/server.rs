@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use axum::routing::post;
 use axum::Router;
+#[cfg(feature = "desktop")]
 use tauri::Emitter;
+#[cfg(feature = "desktop")]
 use tracing::{info, warn};
 
 use crate::error::AppResult;
@@ -23,7 +25,7 @@ impl ProxyHooks for AppHooks {
     }
 
     async fn tls_config(&self, enable_h2: bool) -> AppResult<Arc<rustls::ServerConfig>> {
-        let dir = crate::db::paths::app_data_dir(&self.0.app_handle)?;
+        let dir = self.0.data_dir.clone();
         let sans = self.0.settings.read().await.tls_extra_sans.clone();
         crate::tls::load_or_init_server_config(&dir, &sans, enable_h2).await
     }
@@ -36,11 +38,15 @@ impl ProxyHooks for AppHooks {
         let p = ports.unwrap_or_default();
         *self.0.http_bound_port.write().await = p.http;
         *self.0.https_bound_port.write().await = p.https;
-        // 停止时不删 runtime.json: TUI 连不上会重读, 读到旧端口照样连不上, 按「未运行」处理.
-        if ports.is_some() {
-            write_runtime_file(&self.0).await;
+        // runtime.json 与托盘都是桌面专属 (TUI 本机通行 / 菜单栏); 服务器形态只发界面事件.
+        #[cfg(feature = "desktop")]
+        {
+            // 停止时不删 runtime.json: TUI 连不上会重读, 读到旧端口照样连不上, 按「未运行」处理.
+            if ports.is_some() {
+                write_runtime_file(&self.0).await;
+            }
+            crate::tray::refresh(&self.0.app_handle);
         }
-        crate::tray::refresh(&self.0.app_handle);
         let _ = self.0.app_handle.emit("proxy_restarted", ());
     }
 }
@@ -76,14 +82,9 @@ fn build_router(state: AppState, body_limit: usize) -> Router {
         .with_state(state)
 }
 
+#[cfg(feature = "desktop")]
 async fn write_runtime_file(state: &AppState) {
-    let app_data_dir = match crate::db::paths::app_data_dir(&state.app_handle) {
-        Ok(d) => d,
-        Err(e) => {
-            warn!(?e, "无法解析 app_data_dir, 跳过 runtime.json");
-            return;
-        }
-    };
+    let app_data_dir = state.data_dir.clone();
     // 与托盘 `tray::TrayLocale::from_pref` 读的是同一个 API: 原始标签直接下发给 TUI, 映射规则
     // (zh*/ja*/其余) 由 TUI 侧的 `Lang::resolve` 做, 这里不解析。偏好语言只在这里取一次:
     // `update_settings` 改语言时不重写 runtime.json (写入点只有代理绑定成功这一处: 启动 / 重启 / 回滚)。

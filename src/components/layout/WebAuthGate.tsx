@@ -62,18 +62,19 @@ function CenteredNote() {
 
 function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   const { t } = useT();
-  const [token, setToken] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!token.trim() || busy) return;
+    if (!username.trim() || !password || busy) return;
     setBusy(true);
     setError(null);
     let res: Awaited<ReturnType<typeof webLogin>>;
     try {
-      res = await webLogin(token.trim());
+      res = await webLogin(username.trim(), password);
     } catch {
       res = { ok: false };
     }
@@ -92,16 +93,26 @@ function LoginPage({ onSuccess }: { onSuccess: () => void }) {
         <h1>{t("webAuth.title")}</h1>
         <p className="desc">{t("webAuth.desc")}</p>
         <input
+          className="input"
+          type="text"
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder={t("webAuth.usernamePlaceholder")}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+        />
+        <input
           className="input mono"
           type="password"
           autoComplete="current-password"
-          placeholder={t("webAuth.tokenPlaceholder")}
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          autoFocus
+          placeholder={t("webAuth.passwordPlaceholder")}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
         />
         {error && <div className="web-login-error">{error}</div>}
-        <button className="btn primary" type="submit" disabled={busy || !token.trim()}>
+        <button className="btn primary" type="submit" disabled={busy || !username.trim() || !password}>
           {busy ? t("webAuth.submitting") : t("webAuth.submit")}
         </button>
       </form>

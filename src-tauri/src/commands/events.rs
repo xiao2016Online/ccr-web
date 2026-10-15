@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
-use tauri::State;
+use crate::state::State;
 
 use crate::error::AppResult;
 use crate::observability::events::{EventKind, Severity};
@@ -37,7 +37,7 @@ pub struct EventFilters {
     pub severity: Option<Severity>,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_events(
     state: State<'_, AppState>,
     page: u32,

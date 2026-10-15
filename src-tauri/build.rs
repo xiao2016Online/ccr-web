@@ -10,7 +10,24 @@ fn main() {
     embed_providers();
     embed_release_notes();
     ensure_sidecar_placeholder();
-    tauri_build::build()
+    ensure_ui_dist_placeholder();
+    // server 构建 (--no-default-features) 不跑 tauri-build: 它只为桌面形态生成上下文代码。
+    if std::env::var_os("CARGO_FEATURE_DESKTOP").is_some() {
+        tauri_build::build()
+    }
+}
+
+/// 服务器形态用 rust-embed 内嵌 `ui-dist/` (Docker 构建时由前端阶段拷入)。
+/// 这里保证本地直接 cargo check 时目录存在, 不让 rust-embed 因缺目录而编译失败。
+fn ensure_ui_dist_placeholder() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+    let dir = Path::new(&manifest_dir).join("ui-dist");
+    let index = dir.join("index.html");
+    if !index.exists() {
+        std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("创建 {} 失败: {e}", dir.display()));
+        std::fs::write(&index, b"<!doctype html><title>cc-router</title><p>ui-dist placeholder: run `pnpm build` and copy dist/ here.").unwrap_or_else(|e| panic!("写入 {} 失败: {e}", index.display()));
+    }
+    println!("cargo:rerun-if-changed={}", dir.display());
 }
 
 /// tauri-build 在**每次** cargo 构建 (含 check / test) 时都会复制 `bundle.externalBin` 指向的文件,

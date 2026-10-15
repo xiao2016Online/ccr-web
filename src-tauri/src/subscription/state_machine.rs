@@ -13,7 +13,9 @@ use std::time::Duration;
 
 use chrono::Utc;
 use sqlx::SqlitePool;
-use tauri::{AppHandle, Emitter};
+use crate::state::AppHandle;
+#[cfg(feature = "desktop")]
+use tauri::Emitter;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{info, warn};
 use uuid::Uuid;

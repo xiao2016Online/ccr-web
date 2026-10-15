@@ -111,9 +111,9 @@ fn launch_info_blocking() -> TuiLaunchInfo {
 
 /// `tui_launch_info` 会在 Windows 上拉起 PowerShell 读注册表, 是阻塞 IO——放进 `spawn_blocking`
 /// 避免卡住 async 工作线程 (fix-1 R9)。join 失败 (阻塞线程 panic) 时退化成「不可用」而不是整个 command 报错。
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn tui_launch_info() -> TuiLaunchInfo {
-    match tauri::async_runtime::spawn_blocking(launch_info_blocking).await {
+    match tokio::task::spawn_blocking(launch_info_blocking).await {
         Ok(info) => info,
         Err(_) => TuiLaunchInfo::new(None, crate::commands::app::is_appimage_runtime(), InstallStatus::unavailable()),
     }
@@ -129,7 +129,7 @@ async fn change_install(
     let _guard = BusyGuard::acquire().ok_or_else(|| AppError::BadRequest("上一次操作还没结束".into()))?;
     let sidecar = current_sidecar().ok_or_else(|| AppError::BadRequest("此版本未包含终端界面程序".into()))?;
     let path = PathBuf::from(sidecar);
-    let (outcome, info) = tauri::async_runtime::spawn_blocking(move || -> AppResult<(Outcome, TuiLaunchInfo)> {
+    let (outcome, info) = tokio::task::spawn_blocking(move || -> AppResult<(Outcome, TuiLaunchInfo)> {
         if require_can_install && !launch_info_blocking().can_install {
             return Err(AppError::BadRequest("当前无法添加到 PATH".into()));
         }
@@ -141,12 +141,12 @@ async fn change_install(
     Ok(TuiInstallOutcome { info, cancelled: outcome == Outcome::Cancelled })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn install_tui_command() -> AppResult<TuiInstallOutcome> {
     change_install(tui_install::install, true, "添加到 PATH 失败").await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn uninstall_tui_command() -> AppResult<TuiInstallOutcome> {
     change_install(tui_install::uninstall, false, "从 PATH 移除失败").await
 }

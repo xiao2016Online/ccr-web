@@ -11,7 +11,9 @@ use chrono::Utc;
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::SqlitePool;
-use tauri::{AppHandle, Emitter};
+use crate::state::AppHandle;
+#[cfg(feature = "desktop")]
+use tauri::Emitter;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tracing::{debug, warn};

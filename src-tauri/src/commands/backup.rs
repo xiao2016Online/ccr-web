@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager, State};
+use crate::state::State;
+#[cfg(feature = "desktop")]
+use tauri::{Emitter, Manager};
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
@@ -116,7 +118,7 @@ async fn render_export(state: &AppState, password: Option<Zeroizing<String>>) ->
 }
 
 /// 桌面端导出到用户选的路径。`password` 为 Some 即带密钥模式。网页 / TUI 通道是拒绝桩。
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn export_config(
     state: State<'_, AppState>,
     path: String,
@@ -130,12 +132,12 @@ pub async fn export_config(
 }
 
 /// 不带密钥的导出, 返回文本 (网页界面由浏览器下载)。
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn export_config_text(state: State<'_, AppState>) -> AppResult<String> {
     Ok(render_export(&state, None).await?.0)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn preview_config_import(state: State<'_, AppState>, text: String) -> AppResult<ImportPreview> {
     let file = parse_file(&text)?;
     let local = local_state(&state).await;
@@ -145,7 +147,7 @@ pub async fn preview_config_import(state: State<'_, AppState>, text: String) -> 
 /// The whole import runs in a spawned task: on the web / TUI channel the caller's future is dropped
 /// when the HTTP client disconnects, and cancelling between the DB commit and the in-memory refresh
 /// would leave the two out of sync. The busy guard moves into the task so it covers the entire run.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn apply_config_import(
     state: State<'_, AppState>,
     text: String,
@@ -153,14 +155,32 @@ pub async fn apply_config_import(
 ) -> AppResult<ImportReport> {
     let busy = BusyGuard::acquire()
         .ok_or_else(|| AppError::BadRequest("已有一个导入正在进行".into()))?;
-    let app = state.app_handle.clone();
-    tokio::spawn(async move {
-        let _busy = busy;
-        let state = app.state::<AppState>();
-        run_import(&state, text, options).await
-    })
-    .await
-    .map_err(|e| AppError::internal(format!("导入任务异常退出: {e}")))?
+    // spawn 是为了: HTTP 调用方断开 drop 这个 future 时, 已开始的导入不被拦腰取消。
+    // 桌面通道从 AppHandle 拿托管状态; 服务器通道 AppState 本身就是 Clone 的 Arc 聚合, 直接克隆进去。
+    #[cfg(feature = "desktop")]
+    let result: AppResult<ImportReport> = {
+        let app = state.app_handle.clone();
+        tokio::spawn(async move {
+            let _busy = busy;
+            let state = app.state::<AppState>();
+            run_import(&state, text, options).await
+        })
+        .await
+        .map_err(|e| AppError::internal(format!("导入任务异常退出: {e}")))
+        .and_then(|inner| inner)
+    };
+    #[cfg(not(feature = "desktop"))]
+    let result: AppResult<ImportReport> = {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let _busy = busy;
+            run_import(&state, text, options).await
+        })
+        .await
+        .map_err(|e| AppError::internal(format!("导入任务异常退出: {e}")))
+        .and_then(|inner| inner)
+    };
+    result
 }
 
 async fn run_import(state: &AppState, text: String, options: ImportOptions) -> AppResult<ImportReport> {

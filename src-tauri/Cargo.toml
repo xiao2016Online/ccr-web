@@ -18,6 +18,28 @@ rust-version = "1.90.0"
 name = "cc_router_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# 服务器形态的无头入口。required-features 让默认 (桌面) 构建直接跳过它。
+[[bin]]
+name = "ccr-server"
+path = "src/bin/ccr-server.rs"
+required-features = ["server"]
+
+[features]
+default = ["desktop"]
+# 桌面形态: Tauri 壳 + 全部官方插件 (托盘 / 更新器 / 自启动 / 原生对话框…)。
+desktop = [
+    "dep:tauri",
+    "dep:tauri-plugin-clipboard-manager",
+    "dep:tauri-plugin-dialog",
+    "dep:tauri-plugin-shell",
+    "dep:tauri-plugin-updater",
+    "dep:tauri-plugin-autostart",
+    "dep:tauri-plugin-os",
+    "dep:tauri-plugin-single-instance",
+]
+# 服务器形态: 无 Tauri (不拉 webkit2gtk / GTK 系统库), 前端静态资源编译期内嵌。
+server = ["dep:rust-embed", "dep:mime_guess"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 # build.rs 用 #[path] 引入 release_notes/markdown.rs 校验发版说明, 该文件 derive 了 Serialize
@@ -30,17 +52,21 @@ serde = { version = "1", features = ["derive"] }
 # 报 "recursion limit reached while expanding __bitflags_flag_name!", 回到这里。
 bitflags = "2.13.2"
 regex = "1"
-tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-clipboard-manager = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-shell = "2"
-tauri-plugin-updater = "2"
-tauri-plugin-autostart = "2"
+tauri = { version = "2", features = ["tray-icon"], optional = true }
+tauri-plugin-clipboard-manager = { version = "2", optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-shell = { version = "2", optional = true }
+tauri-plugin-updater = { version = "2", optional = true }
+tauri-plugin-autostart = { version = "2", optional = true }
 # Rust 侧用 tauri_plugin_os::locale() 做托盘菜单的系统语言探测 (tray::TrayLocale::from_pref);
 # 该函数是 sys_locale 的纯封装, 不依赖 plugin 注册, 但 plugin 保留着以便前端随时取 OS 信息.
 # 注: 该 plugin 的 MSRV 曾是本 crate rust-version 的来源 (1.77.2), 2.4 起随 tauri 一起升到 1.90.
-tauri-plugin-os = "2"
-tauri-plugin-single-instance = "2"
+tauri-plugin-os = { version = "2", optional = true }
+tauri-plugin-single-instance = { version = "2", optional = true }
+
+# 服务器形态: /ui 静态资源编译期内嵌 (对齐桌面「打进二进制」的行为), 并按扩展名补 MIME。
+rust-embed = { version = "8", optional = true }
+mime_guess = { version = "2", optional = true }
 
 # 发版说明的版本比较; 已是 tauri 的传递依赖, 提升为直接依赖不引入新包
 semver = "1"
@@ -88,7 +114,8 @@ crc32fast = "1.4"
 if-addrs = "0.13"
 
 # 配置导出的密钥段加密: 口令经 Argon2id 拉伸, XChaCha20-Poly1305 加密 (backup/crypto.rs)
-argon2 = "0.6"
+# password-hash: 管理界面登录的口令哈希 (auth_admin.rs)
+argon2 = { version = "0.6", features = ["password-hash"] }
 chacha20poly1305 = "0.11"
 zeroize = "1"
 getrandom = "0.3"

@@ -1,0 +1,26 @@
+# 构建上下文瘦身: Dockerfile 只需要前端源码与 src-tauri
+.git
+.zcode
+node_modules
+dist
+data
+
+# Rust 构建产物 (镜像内重新编译)
+src-tauri/target
+
+# 桌面打包产物与平台图标工程
+src-tauri/gen
+src-tauri/binaries
+src-tauri/icons/android
+src-tauri/icons/ios
+src-tauri/crates/cc-router-tui/target
+
+# 文档与截图 (不需要进构建上下文)
+assets/screenshots
+release-notes
+docs
+*.md
+!README.md
+
+# 编辑器 / 系统
+.DS_Store

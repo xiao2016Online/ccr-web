@@ -17,7 +17,7 @@ use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 use reqwest::header::HeaderMap as ReqHeaderMap;
 use sqlx::SqlitePool;
-use tauri::AppHandle;
+use crate::state::AppHandle;
 use tokio::sync::{mpsc, RwLock};
 use tracing::warn;
 use uuid::Uuid;

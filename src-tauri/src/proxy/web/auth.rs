@@ -284,7 +284,8 @@ pub async fn require_csrf_header(req: Request<Body>, next: Next) -> Response {
 
 #[derive(Debug, Deserialize)]
 pub struct LoginBody {
-    pub token: String,
+    pub username: String,
+    pub password: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -293,17 +294,34 @@ pub struct SessionInfo {
     pub auth_enabled: bool,
 }
 
-/// POST /ui/api/login. 比对代理 auth_token, 成功签发 cookie 会话.
+/// 登录限流所用的客户端 IP。`trust_proxy` (CCR_TRUST_PROXY) 开启时取
+/// X-Forwarded-For 的第一个地址 —— 仅在确认 /ui 前面有可信反向代理时开启,
+/// 否则该头可被伪造而绕过限流。默认直接用 TCP 对端地址。
+fn login_client_ip(addr: SocketAddr, headers: &HeaderMap, trust_proxy: bool) -> IpAddr {
+    if trust_proxy {
+        if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+            if let Some(first) = xff.split(',').next() {
+                if let Ok(ip) = first.trim().parse::<IpAddr>() {
+                    return ip;
+                }
+            }
+        }
+    }
+    addr.ip()
+}
+
+/// POST /ui/api/login. 校验用户名 + 密码 (argon2id, admin_users 表), 成功签发 cookie 会话.
 pub async fn login(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(body): Json<LoginBody>,
 ) -> Response {
-    let (auth_enabled, token, secure) = {
+    let (auth_enabled, trust_proxy, secure) = {
         let s = state.settings.read().await;
         (
             s.web_ui_auth_enabled,
-            s.auth_token.clone(),
+            s.trust_proxy,
             s.proxy_mode == ProxyMode::Https,
         )
     };
@@ -311,7 +329,7 @@ pub async fn login(
         // 免登录模式: 204 但不签发 cookie
         return StatusCode::NO_CONTENT.into_response();
     }
-    let ip = addr.ip();
+    let ip = login_client_ip(addr, &headers, trust_proxy);
     let now = Instant::now();
     if let Ok(mut g) = state.web_login_guard.lock() {
         if let Err(remaining) = g.check(ip, now) {
@@ -323,15 +341,26 @@ pub async fn login(
             );
         }
     }
-    if !constant_time_eq(body.token.as_bytes(), token.as_bytes()) {
+    let ok = match crate::auth_admin::verify_login(&state.db, &body.username, &body.password).await {
+        Ok(ok) => ok,
+        Err(e) => {
+            warn!(%ip, ?e, "web ui login backend error");
+            return handler::error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "api_error",
+                "login backend error",
+            );
+        }
+    };
+    if !ok {
         if let Ok(mut g) = state.web_login_guard.lock() {
             g.record_failure(ip, now);
         }
-        warn!(%ip, "web ui login failed");
+        warn!(%ip, username = %body.username, "web ui login failed");
         return handler::error_response(
             StatusCode::UNAUTHORIZED,
             "authentication_error",
-            "invalid token",
+            "invalid username or password",
         );
     }
     if let Ok(mut g) = state.web_login_guard.lock() {

@@ -7,6 +7,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use chrono::Utc;
 use serde_json::Value;
+#[cfg(feature = "desktop")]
 use tauri::Emitter;
 use tracing::{info, warn};
 use uuid::Uuid;

@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use tauri::State;
+use crate::state::State;
 
 use crate::error::AppResult;
 use crate::observability::request_log::{local_days_ago_key, local_days_ago_start_ms, now_ms, DAY_MS};
@@ -140,7 +140,7 @@ fn receipt_item_visible(vm: VirtualModelName, has_items: bool) -> bool {
     has_items || !vm.is_jev()
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_receipt_summary(
     state: State<'_, AppState>,
     range: ReceiptRange,

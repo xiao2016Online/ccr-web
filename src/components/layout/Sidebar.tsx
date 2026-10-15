@@ -32,7 +32,7 @@ import { SidebarIcon, type SidebarIconName } from "@/components/sketch/SidebarIc
 import { useReleaseNotesDialog } from "@/components/release-notes/ReleaseNotesController";
 import { useTheme, type ColorMode } from "@/hooks/useTheme";
 import { PixelIcon } from "@/components/win2k/PixelIcon";
-import { isPlainBased, nextThemeId, themeDef, type ThemeArt } from "@/themes";
+import { THEMES, isPlainBased, nextThemeId, themeDef, type ThemeArt } from "@/themes";
 
 /** 经典画风下的侧栏图标 (手绘改版前的 lucide 线性图标) */
 const PLAIN_ICONS: Record<SidebarIconName, LucideIcon> = {
@@ -117,13 +117,18 @@ export function Sidebar() {
     { to: "/request-logs", label: t("sidebar.nav.requestLogs"), icon: "logs" },
     { to: "/statistics", label: t("sidebar.nav.statistics"), icon: "stats" },
     { to: "/receipts", label: t("sidebar.nav.receipts"), icon: "receipts" },
-    {
-      to: "/updates",
-      label: t("sidebar.nav.updates"),
-      icon: "updates",
-      dot: hasUpdate,
-      dotLabelKey: "sidebar.updateAvailable",
-    },
+    // 应用内更新是桌面专属; 服务器版升级 = 拉取新镜像, 不显示该入口
+    ...(runtime.kind === "desktop"
+      ? [
+          {
+            to: "/updates",
+            label: t("sidebar.nav.updates"),
+            icon: "updates" as const,
+            dot: hasUpdate,
+            dotLabelKey: "sidebar.updateAvailable",
+          },
+        ]
+      : []),
     { to: "/settings?tab=backup", label: t("sidebar.nav.backup"), icon: "backup", active: onBackupTab },
     { to: "/settings", label: t("sidebar.nav.settings"), icon: "settings", active: onSettings && !onBackupTab },
     { to: "/about", label: t("sidebar.nav.about"), icon: "about" },
@@ -213,7 +218,8 @@ export function Sidebar() {
             )}
           </div>
         )}
-        {/* 明暗 / 主题: 只有图案的两枚按钮, 图案随当前状态变; 文字只在悬停提示与读屏里 */}
+        {/* 明暗 / 主题: 只有图案的两枚按钮, 图案随当前状态变; 文字只在悬停提示与读屏里。
+            服务器版只有一套主题, 主题切换按钮不渲染。 */}
         <div className="nav-toggles">
           <ToggleButton
             label={t("sidebar.toggle.mode", { mode: t(`settings.theme.${mode}`) })}
@@ -221,12 +227,14 @@ export function Sidebar() {
           >
             <NavIcon name={`mode-${mode}`} art={art} />
           </ToggleButton>
-          <ToggleButton
-            label={t("sidebar.toggle.theme", { theme: t(themeDef(themeId).labelKey) })}
-            onClick={() => setThemeId(nextThemeId(themeId))}
-          >
-            <NavIcon name="theme" art={art} />
-          </ToggleButton>
+          {THEMES.length > 1 && (
+            <ToggleButton
+              label={t("sidebar.toggle.theme", { theme: t(themeDef(themeId).labelKey) })}
+              onClick={() => setThemeId(nextThemeId(themeId))}
+            >
+              <NavIcon name="theme" art={art} />
+            </ToggleButton>
+          )}
         </div>
       </div>
     </aside>

@@ -81,6 +81,8 @@ pub async fn serve_path(State(state): State<AppState>, Path(rel): Path<String>) 
     serve(&state, &rel)
 }
 
+/// 桌面形态: 从 Tauri 打进二进制的 frontendDist 读 (asset_resolver)。
+#[cfg(feature = "desktop")]
 fn serve(state: &AppState, rel: &str) -> Response {
     let resolver = state.app_handle.asset_resolver();
     // 生产模式 resolver 自带 index.html 回落; dev 模式直读磁盘无回落, 这里补一次.
@@ -91,10 +93,43 @@ fn serve(state: &AppState, rel: &str) -> Response {
         return (StatusCode::NOT_FOUND, "web ui assets not found (dev: run `pnpm build` first)")
             .into_response();
     };
-    let is_html = asset.mime_type.starts_with("text/html");
-    let mut resp = Response::new(Body::from(asset.bytes.clone()));
+    finish_response(rel, asset.bytes.clone(), &asset.mime_type)
+}
+
+/// 服务器形态: 编译期内嵌 `ui-dist/` (Docker 构建时由前端阶段拷入; build.rs 保证本地
+/// check 时有占位目录)。
+#[cfg(not(feature = "desktop"))]
+mod embedded {
+    use rust_embed::RustEmbed;
+
+    #[derive(RustEmbed)]
+    #[folder = "ui-dist"]
+    pub struct UiDist;
+}
+
+#[cfg(not(feature = "desktop"))]
+fn serve(_state: &AppState, rel: &str) -> Response {
+    use embedded::UiDist;
+    let asset = UiDist::get(rel).or_else(|| UiDist::get("index.html"));
+    let Some(asset) = asset else {
+        return (StatusCode::NOT_FOUND, "web ui assets not found (dev: run `pnpm build` first)")
+            .into_response();
+    };
+    let mime = mime_guess::from_path(rel).first_or_octet_stream();
+    finish_response(rel, asset.data.to_vec(), mime.essence_str())
+}
+
+/// 公共响应装配: 缓存策略 / nosniff / referrer / HTML 的 CSP。
+fn finish_response(rel: &str, bytes: Vec<u8>, mime: &str) -> Response {
+    let is_html = mime.starts_with("text/html");
+    let html = if is_html {
+        Some(String::from_utf8_lossy(&bytes).into_owned())
+    } else {
+        None
+    };
+    let mut resp = Response::new(Body::from(bytes));
     let headers = resp.headers_mut();
-    if let Ok(v) = HeaderValue::from_str(&asset.mime_type) {
+    if let Ok(v) = HeaderValue::from_str(mime) {
         headers.insert(header::CONTENT_TYPE, v);
     }
     headers.insert(
@@ -103,8 +138,7 @@ fn serve(state: &AppState, rel: &str) -> Response {
     );
     headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     headers.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
-    if is_html {
-        let html = String::from_utf8_lossy(&asset.bytes);
+    if let Some(html) = html {
         if let Ok(v) = HeaderValue::from_str(&csp_for_html(&html)) {
             headers.insert(header::CONTENT_SECURITY_POLICY, v);
         }

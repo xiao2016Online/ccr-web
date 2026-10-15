@@ -129,12 +129,15 @@ export const webRuntime: Runtime = {
 };
 
 /** 登录 / 登出 / 会话探测: 不走 invoke, 因为它们的 401 不该触发 AUTH_REQUIRED */
-export async function webLogin(token: string): Promise<{ ok: boolean; message?: string }> {
+export async function webLogin(
+  username: string,
+  password: string,
+): Promise<{ ok: boolean; message?: string }> {
   const res = await fetch(`${API_PREFIX}/login`, {
     method: "POST",
     headers: { "content-type": "application/json", [CSRF_HEADER]: "1" },
     credentials: "same-origin",
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ username, password }),
   });
   if (res.status === 204) return { ok: true };
   const body = await res.json().catch(() => ({}));

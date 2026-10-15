@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use crate::state::State;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
@@ -20,7 +20,7 @@ pub struct UpdateVirtualModelInput {
     pub subscription_ids: Vec<String>,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_virtual_models(state: State<'_, AppState>) -> AppResult<Vec<VirtualModelDto>> {
     let guard = state.virtual_models.read().await;
     let mut out = Vec::with_capacity(VirtualModelName::all().len());
@@ -36,7 +36,7 @@ pub async fn list_virtual_models(state: State<'_, AppState>) -> AppResult<Vec<Vi
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn update_virtual_model(
     state: State<'_, AppState>,
     name: String,

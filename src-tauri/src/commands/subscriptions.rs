@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use crate::state::State;
 use tokio::sync::RwLock;
 use tracing::warn;
 use uuid::Uuid;
@@ -309,7 +309,7 @@ async fn collect_references(state: &AppState) -> std::collections::HashMap<Uuid,
     out
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_subscriptions(state: State<'_, AppState>) -> AppResult<Vec<SubscriptionDto>> {
     let refs = collect_references(&state).await;
     let subs = state.subscriptions.read().await;
@@ -323,7 +323,7 @@ pub async fn list_subscriptions(state: State<'_, AppState>) -> AppResult<Vec<Sub
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_subscription(
     state: State<'_, AppState>,
     id: String,
@@ -338,7 +338,7 @@ pub async fn get_subscription(
     Ok(SubscriptionDto::from_runtime(&guard, referenced, &state.providers))
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn create_subscription(
     state: State<'_, AppState>,
     input: CreateSubscriptionInput,
@@ -471,7 +471,7 @@ pub async fn create_subscription(
     Ok(SubscriptionDto::from_runtime(&guard, vec![], &state.providers))
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn update_subscription(
     state: State<'_, AppState>,
     id: String,
@@ -624,7 +624,7 @@ pub async fn update_subscription(
     Ok(SubscriptionDto::from_runtime(&guard, referenced, &state.providers))
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn update_subscription_key(
     state: State<'_, AppState>,
     id: String,
@@ -659,7 +659,7 @@ pub async fn update_subscription_key(
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn delete_subscription(state: State<'_, AppState>, id: String) -> AppResult<()> {
     let id = Uuid::parse_str(&id).map_err(|_| AppError::BadRequest("无效 id".into()))?;
     {
@@ -677,7 +677,7 @@ pub async fn delete_subscription(state: State<'_, AppState>, id: String) -> AppR
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn set_subscription_enabled(
     state: State<'_, AppState>,
     id: String,
@@ -711,7 +711,7 @@ pub async fn set_subscription_enabled(
 /// 测试一条订阅的真实可达性: 用最小 prompt 直接打 messages 端点。
 ///
 /// snapshot 模型: 全部连接信息从订阅 row 自身字段读, 不再回查 state.providers。
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn test_connection(
     state: State<'_, AppState>,
     id: String,
@@ -770,7 +770,7 @@ pub async fn test_connection(
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn refresh_model_list(
     state: State<'_, AppState>,
     id: String,
@@ -866,7 +866,7 @@ pub enum ProbeCustomModelsResult {
     },
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn probe_custom_models(
     state: State<'_, AppState>,
     input: ProbeCustomModelsInput,
@@ -922,7 +922,7 @@ pub enum RefreshBalanceResult {
     Unsupported,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn refresh_subscription_balance(
     state: State<'_, AppState>,
     id: String,
@@ -1086,7 +1086,7 @@ pub(crate) fn validate_token_quotas(q: &TokenQuotas) -> AppResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn update_token_quotas(
     state: State<'_, AppState>,
     id: String,
@@ -1110,7 +1110,7 @@ pub async fn update_token_quotas(
     Ok(SubscriptionDto::from_runtime(&guard, referenced_by, &state.providers))
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn reset_total_quota_usage(
     state: State<'_, AppState>,
     id: String,

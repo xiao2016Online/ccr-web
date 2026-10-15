@@ -10,6 +10,7 @@ use std::time::Duration;
 use axum::extract::State;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures::stream::Stream;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Listener};
 use tokio::sync::broadcast::{self, error::RecvError};
 
@@ -42,6 +43,8 @@ pub const BRIDGED_EVENTS: &[&str] = &[
 ];
 
 /// 在 bootstrap 里调一次. listen_any 的回调在 Tauri 事件线程上跑, 只做一次 send.
+/// 服务器形态没有 Tauri 事件层: 业务代码经 state::AppHandle 的 emit 直接写同一广播, 无需本桥。
+#[cfg(feature = "desktop")]
 pub fn install_bridge(app: &AppHandle, tx: broadcast::Sender<UiEvent>) {
     for name in BRIDGED_EVENTS {
         let tx = tx.clone();

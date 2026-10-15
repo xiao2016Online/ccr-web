@@ -73,3 +73,11 @@ CLAUDE.md
 # superpowers 的 spec/plan 工作文档与头脑风暴 mockup 只留本地, 不进仓库
 docs/superpowers/
 .superpowers/
+
+# ===== 服务器版 (server 分支) =====
+# 会话元数据
+.zcode/
+# rust-embed 内嵌的前端产物 (构建时从 dist/ 拷入)
+src-tauri/ui-dist/
+# 本地试跑的数据目录
+data/

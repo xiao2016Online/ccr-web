@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use tauri::State;
+use crate::state::State;
 
 use crate::error::AppResult;
 use crate::observability::request_log::{
@@ -73,7 +73,7 @@ pub struct OverallStatsDto {
     pub tool_use_request_count: i64,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_overall_stats(
     state: State<'_, AppState>,
     range: StatsRange,
@@ -176,7 +176,7 @@ pub struct DailySeriesPointDto {
 /// 「今天」按小时分桶: 聚合表最细只到天, 走 `requests` 原始表 (受 log_retention_days 影响,
 /// 默认永久保留)。SQL 里 strftime(...,'localtime') 按机器本地时区取小时, 半时区 (印度/尼泊尔) 也正确。
 /// 其余 range 走聚合表按天。后端只返回有数据的桶, 前端负责补零填满。
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_daily_series(
     state: State<'_, AppState>,
     range: StatsRange,
@@ -310,7 +310,7 @@ pub struct BreakdownDto {
     pub tool_use_count: i64,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_breakdown(
     state: State<'_, AppState>,
     range: StatsRange,
@@ -394,7 +394,7 @@ pub struct HeatmapDayDto {
     pub request_count: i64,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_token_heatmap(
     state: State<'_, AppState>,
     days: u32,
@@ -469,7 +469,7 @@ pub(crate) async fn query_tool_breakdown(
         .collect()
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_tool_breakdown(
     state: State<'_, AppState>,
     range: StatsRange,

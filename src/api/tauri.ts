@@ -175,6 +175,9 @@ export const api = {
   updateSettings: (patch: SettingsPatch) =>
     invoke<Settings>("update_settings", { patch }),
   generateNewToken: () => invoke<Settings>("generate_new_token"),
+  /** 修改管理界面登录密码 (用户名 + 密码模式; 与 /v1 的访问令牌相互独立) */
+  changeAdminPassword: (username: string, oldPassword: string, newPassword: string) =>
+    invoke<void>("change_admin_password", { username, oldPassword, newPassword }),
   proxyStatus: () => invoke<ProxyStatus>("proxy_status"),
   restartProxy: () => invoke<RestartProxyResult>("restart_proxy"),
   envSnippet: () => invoke<string>("env_snippet"),

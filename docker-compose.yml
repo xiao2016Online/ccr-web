@@ -1,0 +1,45 @@
+# cc-router 服务器版部署示例
+#
+#   docker compose up -d
+#
+# 首次启动: 管理员密码打印在容器日志里 (docker logs ccrouter), 或直接用下面的
+# CCR_ADMIN_USER / CCR_ADMIN_PASSWORD 指定; 代理访问令牌首次也会打印, 登录后
+# 可在「设置 → 安全与访问」查看与轮换。
+#
+# 数据 (SQLite / settings.json / 日志 / TLS 证书) 全部落在 ./data 卷, 升级镜像不丢。
+
+services:
+  ccrouter:
+    build: .
+    # 没有本地构建需求时, 也可以换成已推送的镜像名
+    # image: ccr-web:latest
+    container_name: ccrouter
+    restart: unless-stopped
+    ports:
+      # 宿主机端口:容器端口。容器内恒为 23456 (CCR_PROXY_PORT 只在首启播种 settings.json)。
+      - "23456:23456"
+    environment:
+      # ---- 管理界面登录 (用户名 + 密码) ----
+      # 指定后每次启动都会把密码对齐到该值 (忘记密码时重设也走这里);
+      # 两个都留空则首启生成随机账号密码并打印到日志。
+      - CCR_ADMIN_USER=admin
+      - CCR_ADMIN_PASSWORD=change-me-please
+      # 反向代理 (nginx/caddy) 之后部署时打开, 登录失败锁定按真实客户端 IP 计数
+      # - CCR_TRUST_PROXY=1
+      # ---- 可选: 首次启动播种项 (之后以 settings.json 为准) ----
+      # - CCR_PROXY_PORT=23456
+      # - CCR_LANG=zh
+      # - CCR_AUTH_TOKEN=为客户端工具预置的代理访问令牌(至少16字符)
+      # ---- 日志级别 (可选, 默认 info) ----
+      # - RUST_LOG=info
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:23456/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    # 代理重启/恢复出厂会退出进程, 由这里的 restart 策略拉起。
+    # stop_grace_period 默认 10s: 长流式请求较多的场景可调大。
+    stop_grace_period: 30s

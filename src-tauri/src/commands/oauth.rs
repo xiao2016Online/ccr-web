@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde::Deserialize;
-use tauri::State;
+use crate::state::State;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -50,7 +50,7 @@ fn map_oauth_err(e: OAuthError) -> AppError {
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn start_chatgpt_device_flow(
     state: State<'_, AppState>,
 ) -> AppResult<DeviceFlowStart> {
@@ -64,7 +64,7 @@ pub async fn start_chatgpt_device_flow(
 /// 返回值约定:
 /// - `Some(account)`: 用户已完成授权, 拿到了账号信息, 完整 token 集已缓存到后端.
 /// - `None`: 用户还没在浏览器完成授权, 前端继续轮询.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn poll_chatgpt_device_code(
     state: State<'_, AppState>,
     device_code: String,
@@ -89,7 +89,7 @@ pub struct CreateChatGptOAuthSubscriptionInput {
 
 /// 用 device_code 取出后端缓存的完整 token, 落盘成一条新的 chatgpt_oauth 订阅,
 /// 同时 seed access_token 进内存缓存, 这样首次请求不会触发 refresh.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn create_chatgpt_oauth_subscription(
     state: State<'_, AppState>,
     input: CreateChatGptOAuthSubscriptionInput,
@@ -184,7 +184,7 @@ pub async fn create_chatgpt_oauth_subscription(
 }
 
 /// 撤销订阅的 OAuth 缓存 (前端在 disconnect / 删除订阅时调).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn forget_chatgpt_oauth_cache(
     state: State<'_, AppState>,
     subscription_id: String,
@@ -206,7 +206,7 @@ pub struct ChatGptUsageDto {
 
 /// 查询某个 ChatGPT OAuth 订阅的额度. 出于「未公开协议易变」原则,
 /// 后端不解析字段, 直接把 chatgpt.com/backend-api/wham/usage 的原始 JSON 透传给前端.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_chatgpt_oauth_usage(
     state: State<'_, AppState>,
     subscription_id: String,
@@ -268,7 +268,7 @@ pub struct KiroImportResult {
 }
 
 /// 支持 `~` 展开为 $HOME, 调用方可直接传 `~/.aws/sso/cache/kiro-auth-token.json`.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn import_kiro_credentials_from_file(
     state: State<'_, AppState>,
     path: String,
@@ -300,7 +300,7 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(path)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn import_kiro_credentials_from_text(
     state: State<'_, AppState>,
     json: String,
@@ -318,7 +318,7 @@ async fn import_kiro_inner(state: &AppState, json_str: &str) -> AppResult<KiroIm
     Ok(KiroImportResult { session_id, preview })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn start_kiro_device_flow(
     state: State<'_, AppState>,
     region: Option<String>,
@@ -330,7 +330,7 @@ pub async fn start_kiro_device_flow(
         .map_err(map_oauth_err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn poll_kiro_device_code(
     state: State<'_, AppState>,
     device_code: String,
@@ -359,7 +359,7 @@ pub struct CreateKiroSubscriptionInput {
     #[serde(default)]
     pub profile_arn_override: Option<String>,
 }
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn create_kiro_subscription(
     state: State<'_, AppState>,
     input: CreateKiroSubscriptionInput,
@@ -460,7 +460,7 @@ pub async fn create_kiro_subscription(
     Ok(SubscriptionDto::from_runtime(&guard, vec![], &state.providers))
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn forget_kiro_oauth_cache(
     state: State<'_, AppState>,
     subscription_id: String,
@@ -472,7 +472,7 @@ pub async fn forget_kiro_oauth_cache(
 }
 
 /// 修改一个 Kiro 订阅的伪装字段 (machineId / kiroVersion / systemVersion / nodeVersion).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn update_kiro_disguise_fields(
     state: State<'_, AppState>,
     subscription_id: String,

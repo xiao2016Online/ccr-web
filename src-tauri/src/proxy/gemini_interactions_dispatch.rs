@@ -25,7 +25,7 @@ use reqwest::header::{
 };
 use serde_json::Value;
 use sqlx::SqlitePool;
-use tauri::AppHandle;
+use crate::state::AppHandle;
 use tokio::sync::{mpsc, RwLock};
 use tracing::warn;
 use uuid::Uuid;

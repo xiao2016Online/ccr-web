@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Days, Local, NaiveDate, NaiveTime, TimeZone, Utc};
 use sqlx::SqlitePool;
-use tauri::{AppHandle, Emitter};
+use crate::state::AppHandle;
+#[cfg(feature = "desktop")]
+use tauri::Emitter;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, Duration};
 use tracing::{debug, warn};

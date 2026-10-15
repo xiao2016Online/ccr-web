@@ -3,15 +3,29 @@
 //! 不直接用 `@tauri-apps/plugin-updater` 的 JS API,因为 plugin 注册时就锁定了
 //! tauri.conf.json::endpoints,运行时无法热切。改用 `app.updater_builder()` 每次
 //! 现场构造一次性 builder,把 endpoints 注入进去——切源立即生效,无需重启。
+//!
+//! 服务器形态没有应用内更新 (镜像即版本), 两个命令返回明确指引的拒绝桩。
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
-use tauri_plugin_updater::UpdaterExt;
-use tracing::{info, warn};
+#[cfg(feature = "desktop")]
+use tracing::warn;
 
 use crate::error::{AppError, AppResult};
+use crate::state::{AppHandle, State};
 use crate::state::AppState;
+
+#[cfg(feature = "desktop")]
+use tauri::Emitter;
+#[cfg(feature = "desktop")]
+use tracing::info;
+#[cfg(feature = "desktop")]
+use tauri_plugin_updater::UpdaterExt;
+#[cfg(feature = "desktop")]
 use crate::updater_source::manifest_url_for;
+
+#[cfg(not(feature = "desktop"))]
+const SERVER_ONLY_STUB: &str =
+    "服务器版不支持应用内更新, 请 docker pull 新镜像后重启容器完成升级";
 
 /// 给前端返回的版本元数据,精简自 `tauri_plugin_updater::Update`。
 #[derive(Debug, Serialize, Clone)]
@@ -35,6 +49,7 @@ pub enum UpdaterProgress {
 pub const PROGRESS_EVENT: &str = "updater://progress";
 
 /// 根据当前 settings 构造一次性 Updater 实例。每次 check/install 都现造一次。
+#[cfg(feature = "desktop")]
 async fn build_updater(
     app: &AppHandle,
     state: &State<'_, AppState>,
@@ -58,21 +73,30 @@ async fn build_updater(
 }
 
 /// 检查更新。返回 `None` 表示已是最新。
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn check_for_update(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> AppResult<Option<UpdateInfo>> {
-    let updater = build_updater(&app, &state).await?;
-    let result = updater
-        .check()
-        .await
-        .map_err(|e| AppError::internal(format!("check updates: {e}")))?;
-    Ok(result.map(|u| UpdateInfo {
-        version: u.version.clone(),
-        current_version: u.current_version.clone(),
-        body: u.body.clone(),
-    }))
+    #[cfg(feature = "desktop")]
+    let result: AppResult<Option<UpdateInfo>> = {
+        let updater = build_updater(&app, &state).await?;
+        let found = updater
+            .check()
+            .await
+            .map_err(|e| AppError::internal(format!("check updates: {e}")))?;
+        Ok(found.map(|u| UpdateInfo {
+            version: u.version.clone(),
+            current_version: u.current_version.clone(),
+            body: u.body.clone(),
+        }))
+    };
+    #[cfg(not(feature = "desktop"))]
+    let result: AppResult<Option<UpdateInfo>> = {
+        let _ = (app, state);
+        Err(AppError::BadRequest(SERVER_ONLY_STUB.into()))
+    };
+    result
 }
 
 /// 下载并安装更新。
@@ -80,49 +104,58 @@ pub async fn check_for_update(
 /// 进度通过 `updater://progress` 事件流推送。完成后**不**自动重启,
 /// 由前端调用现有的 `relaunch_app` command 由用户决定时机
 /// (cc-router 是常驻代理,重启会中断 CC 当前会话)。
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn download_install_update(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    let updater = build_updater(&app, &state).await?;
-    let Some(update) = updater
-        .check()
-        .await
-        .map_err(|e| AppError::internal(format!("check updates: {e}")))?
-    else {
-        warn!("download_install_update called but no update available");
-        return Ok(());
-    };
+    #[cfg(feature = "desktop")]
+    let result: AppResult<()> = {
+        let updater = build_updater(&app, &state).await?;
+        let Some(update) = updater
+            .check()
+            .await
+            .map_err(|e| AppError::internal(format!("check updates: {e}")))?
+        else {
+            warn!("download_install_update called but no update available");
+            return Ok(());
+        };
 
-    let app_started = app.clone();
-    let started_once = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let started_flag = started_once.clone();
-    let app_progress = app.clone();
-    let app_finish = app.clone();
+        let app_started = app.clone();
+        let started_once = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let started_flag = started_once.clone();
+        let app_progress = app.clone();
+        let app_finish = app.clone();
 
-    update
-        .download_and_install(
-            move |chunk_length, content_length| {
-                // 第一次回调时先 emit Started,再 emit 第一个 Progress
-                if !started_flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                    let _ = app_started.emit(
+        update
+            .download_and_install(
+                move |chunk_length, content_length| {
+                    // 第一次回调时先 emit Started,再 emit 第一个 Progress
+                    if !started_flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                        let _ = app_started.emit(
+                            PROGRESS_EVENT,
+                            UpdaterProgress::Started { content_length },
+                        );
+                    }
+                    let _ = app_progress.emit(
                         PROGRESS_EVENT,
-                        UpdaterProgress::Started { content_length },
+                        UpdaterProgress::Progress {
+                            chunk_length: chunk_length as u64,
+                        },
                     );
-                }
-                let _ = app_progress.emit(
-                    PROGRESS_EVENT,
-                    UpdaterProgress::Progress {
-                        chunk_length: chunk_length as u64,
-                    },
-                );
-            },
-            move || {
-                let _ = app_finish.emit(PROGRESS_EVENT, UpdaterProgress::Finished);
-            },
-        )
-        .await
-        .map_err(|e| AppError::internal(format!("download/install update: {e}")))?;
-    Ok(())
+                },
+                move || {
+                    let _ = app_finish.emit(PROGRESS_EVENT, UpdaterProgress::Finished);
+                },
+            )
+            .await
+            .map_err(|e| AppError::internal(format!("download/install update: {e}")))?;
+        Ok(())
+    };
+    #[cfg(not(feature = "desktop"))]
+    let result: AppResult<()> = {
+        let _ = (app, state);
+        Err(AppError::BadRequest(SERVER_ONLY_STUB.into()))
+    };
+    result
 }

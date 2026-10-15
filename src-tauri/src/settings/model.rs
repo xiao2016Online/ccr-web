@@ -105,6 +105,11 @@ pub struct Settings {
     /// 中间件每请求读取, 开关不需要重启. 与 web_ui_enabled 互相独立.
     #[serde(default)]
     pub tui_enabled: bool,
+    /// 服务器形态: 是否信任反向代理的 X-Forwarded-For 头 (登录限流按真实客户端 IP 计数).
+    /// 默认关 —— 只有确认 /ui 前面有反代时才开, 否则攻击者可伪造该头绕过限流.
+    /// 服务器首启由 CCR_TRUST_PROXY 环境变量置位, 桌面形态忽略.
+    #[serde(default)]
+    pub trust_proxy: bool,
     /// 导出用量小票时是否播放「小票机吐纸」动画. 默认开. 纯前端偏好, 后端不读.
     #[serde(default = "default_receipt_print_animation")]
     pub receipt_print_animation: bool,
@@ -177,6 +182,7 @@ impl Default for Settings {
             web_ui_enabled: false,
             web_ui_auth_enabled: default_web_ui_auth_enabled(),
             tui_enabled: false,
+            trust_proxy: false,
             receipt_print_animation: default_receipt_print_animation(),
             last_seen_release_notes: None,
         }
@@ -204,6 +210,7 @@ pub struct SettingsPatch {
     pub web_ui_enabled: Option<bool>,
     pub web_ui_auth_enabled: Option<bool>,
     pub tui_enabled: Option<bool>,
+    pub trust_proxy: Option<bool>,
     pub receipt_print_animation: Option<bool>,
 }
 
@@ -265,6 +272,9 @@ impl Settings {
         }
         if let Some(p) = patch.tui_enabled {
             self.tui_enabled = p;
+        }
+        if let Some(p) = patch.trust_proxy {
+            self.trust_proxy = p;
         }
         if let Some(p) = patch.receipt_print_animation {
             self.receipt_print_animation = p;

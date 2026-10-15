@@ -1,5 +1,5 @@
 use serde::Serialize;
-use tauri::State;
+use crate::state::State;
 
 use crate::error::AppResult;
 use crate::proxy::controller::RestartOutcome;
@@ -31,9 +31,9 @@ pub struct ProxyStatus {
     pub last_error: Option<String>,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn proxy_status(state: State<'_, AppState>) -> AppResult<ProxyStatus> {
-    Ok(status_of(state.inner()).await)
+    Ok(status_of(&state).await)
 }
 
 async fn status_of(state: &AppState) -> ProxyStatus {
@@ -69,9 +69,9 @@ pub enum RestartProxyResult {
 
 /// 按当前设置在进程内重建代理 listener. 网页界面也能调: 这个请求本身走的是旧 listener
 /// 上已建立的连接, 属于在途请求, 优雅关停会等它的响应写完再关连接.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn restart_proxy(state: State<'_, AppState>) -> AppResult<RestartProxyResult> {
-    let st = state.inner();
+    let st = &*state;
     let outcome = st.proxy.restart(AppHooks(st.clone())).await;
     let status = status_of(st).await;
     Ok(match outcome {
@@ -117,6 +117,8 @@ pub(crate) fn render_env_export(pairs: &[(&str, String)]) -> String {
 }
 
 /// PowerShell 形态: `$env:K = "V"`。双引号串里 `` ` `` / `"` / `$` 要用反引号转义。
+/// (当前只被单元测试的转义用例引用)
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn render_env_powershell(pairs: &[(&str, String)]) -> String {
     pairs
         .iter()
@@ -134,7 +136,7 @@ pub(crate) fn render_env_powershell(pairs: &[(&str, String)]) -> String {
         .join("\n")
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn env_snippet(state: State<'_, AppState>) -> AppResult<String> {
     let base_url = state.local_base_url().await;
     let token = state.settings.read().await.auth_token.clone();
@@ -142,7 +144,7 @@ pub async fn env_snippet(state: State<'_, AppState>) -> AppResult<String> {
 }
 
 /// 网页界面设置页展示局域网访问地址用. 只列非回环 IPv4.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_lan_addresses() -> AppResult<Vec<String>> {
     let ifaces = if_addrs::get_if_addrs()
         .map_err(|e| crate::error::AppError::internal(format!("枚举网卡失败: {e}")))?;

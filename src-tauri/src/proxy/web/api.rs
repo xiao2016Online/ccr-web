@@ -13,6 +13,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::{json, Value};
+#[cfg(feature = "desktop")]
 use tauri::Manager;
 
 use crate::commands;
@@ -77,12 +78,19 @@ macro_rules! web_commands {
                         struct Args { $( $arg: $ty, )* }
                         let $args: Args = serde_json::from_value(raw)
                             .map_err(|e| DispatchError::BadArgs(e.to_string()))?;
-                        let handle = state.app_handle.clone();
-                        let $st: tauri::State<'_, AppState> = match handle.try_state::<AppState>() {
-                            Some(s) => s,
-                            None => return Err(DispatchError::NotReady),
+                        // 桌面: 从 AppHandle 的托管状态造 tauri::State (与 invoke 通道同一入口)。
+                        // 服务器: 没有 Tauri 托管层, &AppState 就是 State。
+                        #[cfg(feature = "desktop")]
+                        let $st: tauri::State<'_, AppState> = {
+                            let handle = &state.app_handle;
+                            match handle.try_state::<AppState>() {
+                                Some(s) => s,
+                                None => return Err(DispatchError::NotReady),
+                            }
                         };
-                        let $app: tauri::AppHandle = state.app_handle.clone();
+                        #[cfg(not(feature = "desktop"))]
+                        let $st: &AppState = state;
+                        let $app: crate::state::AppHandle = state.app_handle.clone();
                         let out = $body;
                         match out {
                             Ok(v) => serde_json::to_value(v)
@@ -167,6 +175,7 @@ web_commands! {
     get_settings() => commands::settings::get_settings(st).await,
     update_settings(patch: SettingsPatch) => commands::settings::update_settings(st, args.patch).await,
     generate_new_token() => commands::settings::generate_new_token(st).await,
+    change_admin_password(username: String, old_password: String, new_password: String) => commands::settings::change_admin_password(st, args.username, args.old_password, args.new_password).await,
     proxy_status() => commands::proxy::proxy_status(st).await,
     restart_proxy() => commands::proxy::restart_proxy(st).await,
     env_snippet() => commands::proxy::env_snippet(st).await,
@@ -184,7 +193,7 @@ web_commands! {
     get_storage_stats() => commands::app::get_storage_stats(st).await,
     // debug
     open_debug_dump_dir() => commands::debug::open_debug_dump_dir(app).await,
-    clear_debug_dumps() => commands::debug::clear_debug_dumps(app).await,
+    clear_debug_dumps() => commands::debug::clear_debug_dumps(st).await,
     // updater
     check_for_update() => commands::updater::check_for_update(app, st).await,
     download_install_update() => commands::updater::download_install_update(app, st).await,
@@ -293,6 +302,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "desktop")]
     fn registered_matches_generate_handler() {
         let lib_rs = include_str!("../../lib.rs");
         let start_marker = "generate_handler![";

@@ -12,6 +12,9 @@ import { errorText } from "@/lib/errorText";
 /** Web & TUI: 网页界面与终端界面 —— 桌面窗口之外的另外两个客户端. */
 export function WebTuiTab({ form }: { form: SettingsForm }) {
   const { t } = useT();
+  // 服务器形态: 网页界面强制开启且强制登录 (每次启动由后端播种), 开关没有意义;
+  // TUI 与「本机通行」通道被彻底关闭, 整卡隐藏。
+  const desktop = runtime.kind === "desktop";
 
   return (
     <>
@@ -21,74 +24,80 @@ export function WebTuiTab({ form }: { form: SettingsForm }) {
           <div className="card-title">{t("settings.section.webUi")}</div>
         </div>
         <div className="card-body">
-          <div className="setting-row">
-            <div className="label-col">
-              {t("settings.webUi.enabled.label")}
-              <div className="desc">{t("settings.webUi.enabled.desc")}</div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Toggle
-                checked={form.webUiEnabled}
-                onChange={(v) => void form.changeWebUiEnabled(v)}
-                aria-label={t("settings.webUi.enabled.label")}
-              />
-              <span style={{ fontSize: 12, color: "var(--ink-2)" }}>
-                {form.webUiEnabled ? t("settings.webUi.enabled.on") : t("settings.webUi.enabled.off")}
-              </span>
-            </div>
-          </div>
-          <div className="setting-row">
-            <div className="label-col">
-              {t("settings.webUi.auth.label")}
-              <div className="desc">{t("settings.webUi.auth.desc")}</div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Toggle
-                checked={form.webUiAuthEnabled}
-                disabled={!form.webUiEnabled}
-                onChange={(v) => void form.changeWebUiAuthEnabled(v)}
-                aria-label={t("settings.webUi.auth.label")}
-              />
-              <span style={{ fontSize: 12, color: "var(--ink-2)" }}>
-                {form.webUiAuthEnabled ? t("settings.webUi.auth.on") : t("settings.webUi.auth.off")}
-              </span>
-            </div>
-          </div>
+          {desktop && (
+            <>
+              <div className="setting-row">
+                <div className="label-col">
+                  {t("settings.webUi.enabled.label")}
+                  <div className="desc">{t("settings.webUi.enabled.desc")}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Toggle
+                    checked={form.webUiEnabled}
+                    onChange={(v) => void form.changeWebUiEnabled(v)}
+                    aria-label={t("settings.webUi.enabled.label")}
+                  />
+                  <span style={{ fontSize: 12, color: "var(--ink-2)" }}>
+                    {form.webUiEnabled ? t("settings.webUi.enabled.on") : t("settings.webUi.enabled.off")}
+                  </span>
+                </div>
+              </div>
+              <div className="setting-row">
+                <div className="label-col">
+                  {t("settings.webUi.auth.label")}
+                  <div className="desc">{t("settings.webUi.auth.desc")}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Toggle
+                    checked={form.webUiAuthEnabled}
+                    disabled={!form.webUiEnabled}
+                    onChange={(v) => void form.changeWebUiAuthEnabled(v)}
+                    aria-label={t("settings.webUi.auth.label")}
+                  />
+                  <span style={{ fontSize: 12, color: "var(--ink-2)" }}>
+                    {form.webUiAuthEnabled ? t("settings.webUi.auth.on") : t("settings.webUi.auth.off")}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
           {form.webUiEnabled && (
             <WebUiAddresses
               listenAll={form.listenAll}
               authEnabled={form.webUiAuthEnabled}
-              token={form.settings.data?.auth_token ?? ""}
+              token={desktop ? (form.settings.data?.auth_token ?? "") : ""}
             />
           )}
         </div>
       </div>
 
-      {/* 终端界面 */}
-      <div className="card section">
-        <div className="card-head">
-          <div className="card-title">{t("settings.section.tui")}</div>
-        </div>
-        <div className="card-body">
-          <div className="setting-row">
-            <div className="label-col">
-              {t("settings.tui.enabled.label")}
-              <div className="desc">{t("settings.tui.enabled.desc")}</div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Toggle
-                checked={form.tuiEnabled}
-                onChange={(v) => void form.changeTuiEnabled(v)}
-                aria-label={t("settings.tui.enabled.label")}
-              />
-              <span style={{ fontSize: 12, color: "var(--ink-2)" }}>
-                {form.tuiEnabled ? t("settings.tui.enabled.on") : t("settings.tui.enabled.off")}
-              </span>
-            </div>
+      {/* 终端界面 (桌面专属) */}
+      {desktop && (
+        <div className="card section">
+          <div className="card-head">
+            <div className="card-title">{t("settings.section.tui")}</div>
           </div>
-          <TuiLaunchRow enabled={form.tuiEnabled} />
+          <div className="card-body">
+            <div className="setting-row">
+              <div className="label-col">
+                {t("settings.tui.enabled.label")}
+                <div className="desc">{t("settings.tui.enabled.desc")}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Toggle
+                  checked={form.tuiEnabled}
+                  onChange={(v) => void form.changeTuiEnabled(v)}
+                  aria-label={t("settings.tui.enabled.label")}
+                />
+                <span style={{ fontSize: 12, color: "var(--ink-2)" }}>
+                  {form.tuiEnabled ? t("settings.tui.enabled.on") : t("settings.tui.enabled.off")}
+                </span>
+              </div>
+            </div>
+            <TuiLaunchRow enabled={form.tuiEnabled} />
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
