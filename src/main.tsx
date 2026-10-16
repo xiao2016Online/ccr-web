@@ -16,6 +16,19 @@ import "./styles.css";
 import "./themes/plain.css";
 import "./themes/techblue.css";
 
+// crypto.randomUUID 只在安全上下文 (HTTPS / localhost) 提供; 服务器版常以
+// http://IP:端口 裸访问, 这里补一个 RFC 4122 v4 兜底实现 (Kiro OAuth 的
+// PKCE 随机串等处会用到), 任何形态下都保证可用。
+if (typeof crypto !== "undefined" && typeof crypto.randomUUID !== "function") {
+  crypto.randomUUID = () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  };
+}
+
 // 首帧前打平台标记: 拖窗带高度 / 窗口三键的排版靠 <html data-platform> 分流
 applyPlatformAttr();
 

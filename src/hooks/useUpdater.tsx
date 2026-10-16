@@ -119,6 +119,12 @@ export function UpdaterProvider({ children }: { children: ReactNode }) {
   }, [scheduleProgressFlush]);
 
   const check = useCallback(async () => {
+    // 服务器 (web 运行时) 没有应用内更新, 后端对应命令是拒绝桩;
+    // 直接短路, 不发请求 (否则设置页/侧栏每次轮询都是一条 400 报错)。
+    if (runtime.kind !== "desktop") {
+      setStatus("up_to_date");
+      return;
+    }
     setStatus("checking");
     setErrorMessage(null);
     try {

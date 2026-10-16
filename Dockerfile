@@ -18,6 +18,7 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm config set registry https://registry.npmmirror.com && pnpm install --frozen-lockfile
 COPY index.html postcss.config.js tsconfig.json tsconfig.node.json vite.config.ts components.json ./
 COPY src ./src
+COPY public ./public
 RUN pnpm build
 
 # ---------- 阶段 2: Rust 编译 ----------
