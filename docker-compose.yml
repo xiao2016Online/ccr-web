@@ -10,9 +10,9 @@
 
 services:
   ccrouter:
+    # 源码构建: 保留 build: 行; 使用 GitHub 自动构建的在线镜像: 注释掉 build: 并打开 image:
     build: .
-    # 没有本地构建需求时, 也可以换成已推送的镜像名
-    # image: ccr-web:latest
+    # image: ghcr.io/xiao2016online/ccr-web:latest
     container_name: ccrouter
     restart: unless-stopped
     ports:

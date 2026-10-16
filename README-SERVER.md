@@ -16,6 +16,21 @@ Docker 服务。代理转发核心（协议转换 / 调度 / 故障转移）与�
 
 ## 快速开始（Docker Compose）
 
+方式一：**直接用 GitHub 自动构建的镜像**（推荐，无需本机构建；x86/ARM 通用）
+
+```bash
+mkdir ccr-web && cd ccr-web
+curl -O https://raw.githubusercontent.com/xiao2016Online/ccr-web/server/docker-compose.yml
+# 编辑 docker-compose.yml: 注释掉 build: 行, 打开 image: ghcr.io/xiao2016online/ccr-web:latest
+docker compose up -d
+docker compose logs ccrouter   # 看首次启动日志 (管理员密码 / 代理访问令牌)
+```
+
+> GHCR 包首次发布后默认是私有的，需要在 GitHub 仓库 → Packages → ccr-web →
+> Package settings 里改为 Public，服务器才能匿名拉取（或用 PAT 登录后拉取）。
+
+方式二：从源码构建
+
 ```bash
 # 1. 按需修改 docker-compose.yml 里的 CCR_ADMIN_USER / CCR_ADMIN_PASSWORD
 # 2. 构建并启动
