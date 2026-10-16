@@ -54,24 +54,29 @@ RUN cargo build --release --no-default-features --features server --bin ccr-serv
 
 # ---------- 阶段 3: 运行层 ----------
 FROM debian:trixie-slim
-# 国内网络: 换 Debian 源后再装运行时依赖
+# 国内网络: 换 Debian 源后再装运行时依赖。
+# gosu: docker-entrypoint.sh 里 root -> ccrouter 的降权工具 (只这一段以 root 运行)。
 RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && apt-get install -y --no-install-recommends ca-certificates curl gosu \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 10001 ccrouter \
     && useradd -u 10001 -g ccrouter -m -d /data ccrouter
 
 COPY --from=build /app/src-tauri/target/release/ccr-server /usr/local/bin/ccr-server
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
 ENV CCR_DATA_DIR=/data
 VOLUME ["/data"]
 EXPOSE 23456
 
-USER ccrouter
 WORKDIR /data
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD curl -fsS http://127.0.0.1:23456/health || exit 1
 
-ENTRYPOINT ["ccr-server"]
+# 入口以 root 启动: 修正数据目录属主 (bind mount 挂载的宿主机目录常属 root),
+# 随即降权为 ccrouter 运行实际服务。详见 docker-entrypoint.sh。
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["ccr-server"]

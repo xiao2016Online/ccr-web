@@ -134,6 +134,26 @@ server {
 - 备份：管理界面「设置 → 备份与迁移」导出配置 JSON；或直接停容器后拷走 `./data`。
 - 恢复出厂：管理界面按钮（清空数据库与设置并自动重启容器）。
 
+## 常见问题
+
+**容器启动报 `Permission denied (os error 13)`**
+
+数据目录属主问题：服务以非 root（uid 10001）运行，而 `./data` 目录属于宿主机 root
+（Docker 自动创建 bind mount 目录时的默认属主），容器内写不进去。
+
+- 当前镜像的入口脚本会自动修正属主后启动，正常无需处理；
+- 若仍遇到（例如手动用 root 改过数据文件），手动执行一次即可：
+
+```bash
+sudo chown -R 10001:10001 ./data
+docker compose up -d
+```
+
+**部署在反向代理之后，登录限流把所有用户当成同一个 IP**
+
+在 `docker-compose.yml` 里加环境变量 `CCR_TRUST_PROXY=1`（同时确保反代设置了
+`X-Forwarded-For`，见上方 nginx 示例）。
+
 ## 本地开发 / 构建
 
 ```bash
