@@ -3,7 +3,7 @@ import Github from "@lobehub/icons/es/Github";
 import { runtime } from "@/runtime";
 import { version as VERSION } from "../../package.json";
 import { LogoMark } from "@/components/sketch/LogoMark";
-import { REPO_URL, StarPrompt } from "@/components/StarPrompt";
+import { REPO_URL } from "@/components/StarPrompt";
 import { useT } from "@/i18n";
 
 const DOCS_URL = "https://ccrouter.app/docs/";
@@ -61,7 +61,6 @@ export function AboutPage() {
               </div>
             </div>
           </div>
-          <StarPrompt className="in-card" />
         </div>
       </div>
 

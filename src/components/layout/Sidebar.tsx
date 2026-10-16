@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   BarChart3,
@@ -32,7 +32,7 @@ import { SidebarIcon, type SidebarIconName } from "@/components/sketch/SidebarIc
 import { useReleaseNotesDialog } from "@/components/release-notes/ReleaseNotesController";
 import { useTheme, type ColorMode } from "@/hooks/useTheme";
 import { PixelIcon } from "@/components/win2k/PixelIcon";
-import { THEMES, isPlainBased, nextThemeId, themeDef, type ThemeArt } from "@/themes";
+import { isPlainBased, type ThemeArt } from "@/themes";
 
 /** 经典画风下的侧栏图标 (手绘改版前的 lucide 线性图标) */
 const PLAIN_ICONS: Record<SidebarIconName, LucideIcon> = {
@@ -87,7 +87,7 @@ export function Sidebar() {
   const { detected } = useUpdater();
   const vms = useVirtualModels();
   const notes = useReleaseNotesDialog();
-  const { art, mode, setMode, themeId, setThemeId } = useTheme();
+  const { art, mode, setMode } = useTheme();
   const location = useLocation();
 
   const subsCount = subs.data?.length ?? 0;
@@ -185,6 +185,19 @@ export function Sidebar() {
         {art === "sketch" && <SketchRule className="foot-rule" />}
         {(notes.hasNotes || showLogout) && (
           <div className="nav-extra">
+            {/* 明暗模式切换: 与其他导航项同款式 (点击在 跟随系统 → 浅色 → 暗色 间轮换) */}
+            <button
+              type="button"
+              className="nav-item"
+              onClick={() => setMode(NEXT_MODE[mode])}
+              aria-label={t("sidebar.toggle.mode", { mode: t(`settings.theme.${mode}`) })}
+              title={t("sidebar.toggle.mode", { mode: t(`settings.theme.${mode}`) })}
+            >
+              <span className="nav-icon">
+                <NavIcon name={`mode-${mode}`} art={art} />
+              </span>
+              <span className="nav-label">{t(`settings.theme.${mode}`)}</span>
+            </button>
             {notes.hasNotes && (
               <button
                 type="button"
@@ -218,42 +231,8 @@ export function Sidebar() {
             )}
           </div>
         )}
-        {/* 明暗 / 主题: 只有图案的两枚按钮, 图案随当前状态变; 文字只在悬停提示与读屏里。
-            服务器版只有一套主题, 主题切换按钮不渲染。 */}
-        <div className="nav-toggles">
-          <ToggleButton
-            label={t("sidebar.toggle.mode", { mode: t(`settings.theme.${mode}`) })}
-            onClick={() => setMode(NEXT_MODE[mode])}
-          >
-            <NavIcon name={`mode-${mode}`} art={art} />
-          </ToggleButton>
-          {THEMES.length > 1 && (
-            <ToggleButton
-              label={t("sidebar.toggle.theme", { theme: t(themeDef(themeId).labelKey) })}
-              onClick={() => setThemeId(nextThemeId(themeId))}
-            >
-              <NavIcon name="theme" art={art} />
-            </ToggleButton>
-          )}
-        </div>
       </div>
     </aside>
-  );
-}
-
-function ToggleButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button type="button" className="nav-toggle" onClick={onClick} aria-label={label} title={label}>
-      {children}
-    </button>
   );
 }
 
