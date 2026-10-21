@@ -1156,5 +1156,8 @@
   "settings.auth.admin.submitting": "提交中…",
   "settings.auth.admin.success": "密码已修改",
   "settings.auth.admin.mismatch": "两次输入的新密码不一致",
-  "settings.auth.admin.failed": "修改失败"
+  "settings.auth.admin.failed": "修改失败",
+  "requestLogs.firstPage": "首页",
+  "requestLogs.lastPage": "末页",
+  "requestLogs.jumpToPage": "跳转到页码"
 }

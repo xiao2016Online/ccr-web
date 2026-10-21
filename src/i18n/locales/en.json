@@ -1156,5 +1156,8 @@
   "settings.auth.admin.submitting": "Submitting…",
   "settings.auth.admin.success": "Password changed",
   "settings.auth.admin.mismatch": "New passwords do not match",
-  "settings.auth.admin.failed": "Change failed"
+  "settings.auth.admin.failed": "Change failed",
+  "requestLogs.firstPage": "First page",
+  "requestLogs.lastPage": "Last page",
+  "requestLogs.jumpToPage": "Jump to page"
 }

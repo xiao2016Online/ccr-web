@@ -1156,5 +1156,8 @@
   "settings.auth.admin.submitting": "送信中…",
   "settings.auth.admin.success": "パスワードを変更しました",
   "settings.auth.admin.mismatch": "新しいパスワードが一致しません",
-  "settings.auth.admin.failed": "変更に失敗しました"
+  "settings.auth.admin.failed": "変更に失敗しました",
+  "requestLogs.firstPage": "先頭ページ",
+  "requestLogs.lastPage": "最終ページ",
+  "requestLogs.jumpToPage": "ページへ移動"
 }
