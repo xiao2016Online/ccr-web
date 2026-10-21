@@ -321,11 +321,15 @@ function SubscriptionHealthCard({
               display: "flex",
               alignItems: "center",
               gap: 8,
-              background: "var(--ok-bg)",
-              borderColor: "var(--ok)",
+              background: "var(--accent-bg)",
+              borderColor: "var(--accent-line)",
             }}
           >
-            <span className="status-dot status-dot-ok" aria-hidden />
+            <span
+              className="status-dot"
+              style={{ background: "var(--accent)" }}
+              aria-hidden
+            />
             {t("overview.subs.allHealthy")}
           </div>
         ) : (

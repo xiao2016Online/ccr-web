@@ -29,8 +29,12 @@
   --ok:    #059669;
   --ok-bg: #ecfdf5;
   --warn:  #d97706;
-  --err:   #dc2626;
-  --err-bg: #fef2f2;
+  /* 失败/错误改用紫罗兰系: 与主题蓝同为冷色, 不再出现红蓝撞色。
+     --err 用于文字/边框/状态点, 取 violet-600 保证小字号可读;
+     --chart-error 用于图表色块, 可以更浅 (图表不依赖文字对比度)。 */
+  --err:         #7c3aed;
+  --err-bg:      #f5f3ff;
+  --chart-error: #a78bfa;
 
   /* 路由图 / 虚拟模型映射: 客户端=青绿, 路由器=蓝, 上游=靛蓝, 错误=红 */
   --rf-client-line: #a7f3d0;
@@ -44,6 +48,13 @@
   --rf-up-bg:       #eef2ff;
   --rf-err-line:    #fecaca;
   --rf-err-ink:     #b91c1c;
+
+  /* 顺序色阶 (浅→深): Token 四段堆叠柱 / 年历热力图 4 档。
+     styles.css 里是手绘主题的「铁锈橙」, 服务器版统一换成科技蓝系。 */
+  --seq-1: #bfdbfe;
+  --seq-2: #93c5fd;
+  --seq-3: #60a5fa;
+  --seq-4: #2563eb;
 
   /* shadcn HSL token */
   --background: 214 45% 97%;
@@ -59,7 +70,7 @@
   --muted: 214 32% 94%;
   --muted-foreground: 215 16% 47%;
   --accent-foreground: 222 47% 11%;
-  --destructive: 0 72% 51%;
+  --destructive: 262 83% 58%;
   --destructive-foreground: 0 0% 100%;
   --border: 214 30% 89%;
   --input: 214 28% 85%;
@@ -87,8 +98,10 @@
   --ok:    #34d399;
   --ok-bg: #0c2b22;
   --warn:  #fbbf24;
-  --err:   #f87171;
-  --err-bg: #2f1416;
+  /* 暗色下错误色取浅紫 (深底上更亮), 图表同色 */
+  --err:         #c4b5fd;
+  --err-bg:      #2b1f4d;
+  --chart-error: #c4b5fd;
 
   --rf-client-line: #14523f;
   --rf-client-flow: #34d399;
@@ -101,6 +114,12 @@
   --rf-up-bg:       #191f3d;
   --rf-err-line:    #7f1d1d;
   --rf-err-ink:     #fca5a5;
+
+  /* 暗色下反向 (深→浅), 保持堆叠段之间的明度差 */
+  --seq-1: #1e3a8a;
+  --seq-2: #1e40af;
+  --seq-3: #2563eb;
+  --seq-4: #60a5fa;
 
   --background: 220 50% 8%;
   --foreground: 214 32% 91%;
@@ -115,7 +134,7 @@
   --muted: 220 32% 16%;
   --muted-foreground: 215 18% 62%;
   --accent-foreground: 214 32% 91%;
-  --destructive: 0 84% 65%;
+  --destructive: 262 80% 65%;
   --destructive-foreground: 0 0% 100%;
   --border: 220 28% 20%;
   --input: 220 26% 25%;

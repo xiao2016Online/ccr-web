@@ -174,7 +174,7 @@ function QuotaCell({ subscription }: { subscription: SubscriptionDto }) {
                 justifyContent: "space-between",
                 gap: 8,
                 fontSize: 11.5,
-                color: q.exceeded ? "var(--destructive, #dc2626)" : "var(--ink-3)",
+                color: q.exceeded ? "var(--err)" : "var(--ink-3)",
               }}
             >
               <span>{t(`quota.period.${q.period}`)}</span>

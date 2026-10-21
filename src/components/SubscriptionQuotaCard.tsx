@@ -83,7 +83,7 @@ export function SubscriptionQuotaCard({ subscription, onChanged }: Props) {
                 className={cn(
                   "flex h-3 w-full overflow-hidden rounded-full bg-muted",
                   warn && !q.exceeded && "ring-1 ring-amber-500",
-                  q.exceeded && "ring-1 ring-red-500",
+                  q.exceeded && "ring-1 ring-[color:var(--err)]",
                 )}
                 title={QUOTA_SEGMENTS.map((s) => `${t(s.labelKey)} ${fmtCompact(q[s.key])}`).join(" · ")}
               >

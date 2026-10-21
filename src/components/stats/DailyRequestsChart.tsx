@@ -15,10 +15,11 @@ interface Row {
   total: number;
 }
 
-// 状态色直接复用 app 的语义 token, 暗色下自动提亮
+// 成功柱用主题强调色 (科技蓝); 失败用紫罗兰 (与蓝同为冷色, 避免红蓝撞色);
+// 超时用灰。三者明度/色相都有区分, 暗色下 token 自动提亮。
 const SERIES = [
-  { key: "success", color: "var(--ok)", labelKey: "stats.daily.tooltipSuccess" },
-  { key: "error", color: "var(--err)", labelKey: "stats.daily.tooltipError" },
+  { key: "success", color: "var(--accent)", labelKey: "stats.daily.tooltipSuccess" },
+  { key: "error", color: "var(--chart-error)", labelKey: "stats.daily.tooltipError" },
   { key: "timeout", color: "var(--ink-4)", labelKey: "stats.daily.tooltipTimeout" },
 ] as const;
 
