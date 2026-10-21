@@ -109,8 +109,9 @@ fn custom_profile(protocol: CustomProtocol) -> CustomProfile {
         ),
         // Anthropic 兼容中转的 base_url 形态最杂 (常带 /anthropic 之类 messages 专属前缀),
         // 刷新时走 model_discovery 的候选探测, 这里只登记协议默认路径。
+        // 图标与创建表单里该选项显示的 Claude 图标一致 (其余自定义协议同样沿用其协议品牌图标)。
         CustomProtocol::Anthropic => {
-            chat(CUSTOM_SOURCE_MARKER, AuthType::ApiKey, "custom", discovery(protocol.default_models_path()))
+            chat(CUSTOM_SOURCE_MARKER, AuthType::ApiKey, "claude", discovery(protocol.default_models_path()))
         }
         // No usable model list on any known System One upstream; the Jev slot is required instead.
         CustomProtocol::Systemone => CustomProfile {
@@ -1259,7 +1260,7 @@ mod tests {
     #[test]
     fn chat_profiles_keep_their_previous_values() {
         let cases = [
-            (CustomProtocol::Anthropic, "custom", AuthType::ApiKey, "custom"),
+            (CustomProtocol::Anthropic, "custom", AuthType::ApiKey, "claude"),
             (CustomProtocol::Gemini, "custom-gemini", AuthType::GeminiApiKey, "google"),
             (CustomProtocol::OpenaiResponses, "custom-openai", AuthType::OpenaiResponsesApiKey, "openai"),
             (CustomProtocol::OpenaiChatCompletions, "custom-openai-chat", AuthType::OpenaiChatCompletionsApiKey, "openai"),

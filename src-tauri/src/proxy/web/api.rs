@@ -267,6 +267,7 @@ pub async fn dispatch_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "desktop")]
     use std::collections::BTreeSet;
 
     /// 扫描 lib.rs 的 `generate_handler![...]` 登记表, 取每个 path 的最后一段
