@@ -98,6 +98,7 @@ export function Sidebar() {
   const onBackupTab = onSettings && new URLSearchParams(location.search).get("tab") === "backup";
 
   const items: NavItem[] = [
+    { to: "/overview", label: t("sidebar.nav.overview"), icon: "stats" },
     { to: "/guide", label: t("sidebar.nav.guide"), icon: "guide" },
     {
       to: "/live-routing",

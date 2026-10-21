@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router";
 import { AppShell } from "@/components/layout/AppShell";
+import { OverviewPage } from "@/routes/Overview";
 import { VirtualModelsPage } from "@/routes/VirtualModels";
 import { LiveRoutingPage } from "@/routes/LiveRouting";
 import { UpdatesPage } from "@/routes/Updates";
@@ -51,7 +52,8 @@ function AppInner() {
           </OnboardingGate>
         }
       >
-        <Route index element={<Navigate to="/virtual-models" replace />} />
+        <Route index element={<OverviewPage />} />
+        <Route path="/overview" element={<OverviewPage />} />
         <Route path="/live-routing" element={<LiveRoutingPage />} />
         <Route path="/virtual-models" element={<VirtualModelsPage />} />
         <Route path="/subscriptions" element={<SubscriptionsPage />} />
