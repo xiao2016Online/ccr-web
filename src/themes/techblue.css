@@ -206,3 +206,40 @@
   background: color-mix(in srgb, var(--accent) 86%, #fff);
   border-color: color-mix(in srgb, var(--accent) 86%, #fff);
 }
+
+/* ------------------------------------------------------------
+ * 剩余黑色元素: 步骤指示器 / 设置页激活标签下划线 / Live Routing 的深色按钮。
+ * 统一换成主题蓝, 页面上不再出现黑底交互元素。
+ * ------------------------------------------------------------ */
+:where([data-theme="techblue"]) .step.done .num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+:where([data-theme="techblue"]) .step.active .num {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+:where([data-theme="techblue"]) .step.done + .step-bar { background: var(--accent); }
+
+:where([data-theme="techblue"]) .tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+:where([data-theme="techblue"]) .lrc-btn-dark {
+  background: var(--accent);
+  color: #ffffff;
+}
+:where([data-theme="techblue"]) .lrc-btn-dark:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+.dark:where([data-theme="techblue"]) .lrc-btn-dark:hover {
+  background: color-mix(in srgb, var(--accent) 86%, #fff);
+}
+
+/* 原生复选框 / 单选框的选中色: 小票页设置里原本是 accent-color: var(--ink) (黑) */
+:where([data-theme="techblue"]) input[type="checkbox"],
+:where([data-theme="techblue"]) input[type="radio"] {
+  accent-color: var(--accent);
+}
