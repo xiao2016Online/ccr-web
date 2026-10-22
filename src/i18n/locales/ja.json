@@ -1185,5 +1185,6 @@
   "overview.subs.empty": "サブスクリプションがありません。「サブスクリプション」から追加してください。",
   "overview.subs.allHealthy": "すべてのサブスクリプションが正常です",
   "overview.subs.cooldown": "{mins} 分後に復帰",
-  "overview.proxy.copy": "ベース URL をコピー"
+  "overview.proxy.copy": "ベース URL をコピー",
+  "subscriptions.col.enabled": "有効"
 }

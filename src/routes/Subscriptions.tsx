@@ -1,10 +1,11 @@
 import { Link } from "react-router";
 import { Plus, Key } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Toggle } from "@/components/Toggle";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { EmptyState } from "@/components/EmptyState";
 import { BalanceBadge } from "@/components/SubscriptionBalanceCard";
-import { useSubscriptions } from "@/hooks/useSubscriptions";
+import { useSetSubscriptionEnabled, useSubscriptions } from "@/hooks/useSubscriptions";
 import { useProviders } from "@/hooks/useProviders";
 import { useT } from "@/i18n";
 import { providerName } from "@/lib/providerText";
@@ -34,6 +35,7 @@ export function SubscriptionsPage() {
   const { t, locale } = useT();
   const subs = useSubscriptions();
   const providers = useProviders();
+  const setEnabled = useSetSubscriptionEnabled();
 
   return (
     <>
@@ -72,6 +74,7 @@ export function SubscriptionsPage() {
                 <th style={{ width: 90 }}>{t("subscriptions.col.referenced")}</th>
                 <th style={{ width: 100 }}>{t("subscriptions.col.updatedAt")}</th>
                 <th style={{ width: 80 }}></th>
+                <th style={{ width: 70 }}>{t("subscriptions.col.enabled")}</th>
               </tr>
             </thead>
             <tbody>
@@ -137,6 +140,14 @@ export function SubscriptionsPage() {
                       <Link className="btn sm" to={`/subscriptions/${sub.id}`}>
                         {t("subscriptions.view")}
                       </Link>
+                    </td>
+                    <td>
+                      <Toggle
+                        checked={sub.enabled}
+                        disabled={setEnabled.isPending && setEnabled.variables?.id === sub.id}
+                        onChange={(next) => setEnabled.mutate({ id: sub.id, enabled: next })}
+                        aria-label={`${t("subscriptions.col.enabled")}: ${sub.display_name}`}
+                      />
                     </td>
                   </tr>
                 );

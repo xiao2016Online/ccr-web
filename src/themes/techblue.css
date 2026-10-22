@@ -165,3 +165,44 @@
   background: rgba(147, 197, 253, 0.14);
   color: var(--accent-ink);
 }
+
+/* ------------------------------------------------------------
+ * 主按钮与开关的开启态: plain 画风默认是墨黑底 (--ink),
+ * 科技蓝主题统一改成强调蓝, 与导航激活项、图表成功柱同色系。
+ * ------------------------------------------------------------ */
+:where([data-theme="techblue"]) .btn.primary {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+:where([data-theme="techblue"]) .btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+  border-color: color-mix(in srgb, var(--accent) 88%, #000);
+  box-shadow: none;
+}
+.dark:where([data-theme="techblue"]) .btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 86%, #fff);
+  border-color: color-mix(in srgb, var(--accent) 86%, #fff);
+}
+
+/* 开关: 开启态用主题蓝, 关闭态保持中性灰 */
+:where([data-theme="techblue"]) .toggle.on {
+  background: var(--accent);
+}
+
+/* 只读提示条里的「去设置」按钮同样用主题蓝 */
+:where([data-theme="techblue"]) .btn-dark {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+:where([data-theme="techblue"]) .btn-dark:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+  border-color: color-mix(in srgb, var(--accent) 88%, #000);
+  box-shadow: none;
+  transform: none;
+}
+.dark:where([data-theme="techblue"]) .btn-dark:hover {
+  background: color-mix(in srgb, var(--accent) 86%, #fff);
+  border-color: color-mix(in srgb, var(--accent) 86%, #fff);
+}

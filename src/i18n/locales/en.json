@@ -1185,5 +1185,6 @@
   "overview.subs.empty": "No subscriptions yet. Add your first one under Subscriptions.",
   "overview.subs.allHealthy": "All subscriptions are healthy",
   "overview.subs.cooldown": "Recovers in {mins} min",
-  "overview.proxy.copy": "Copy base URL"
+  "overview.proxy.copy": "Copy base URL",
+  "subscriptions.col.enabled": "Enabled"
 }

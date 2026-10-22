@@ -1185,5 +1185,6 @@
   "overview.subs.empty": "还没有添加订阅。到「订阅管理」添加第一条即可开始使用。",
   "overview.subs.allHealthy": "全部订阅运行正常",
   "overview.subs.cooldown": "{mins} 分钟后恢复",
-  "overview.proxy.copy": "复制接入地址"
+  "overview.proxy.copy": "复制接入地址",
+  "subscriptions.col.enabled": "启用"
 }
