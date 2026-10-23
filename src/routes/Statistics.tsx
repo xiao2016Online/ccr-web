@@ -8,6 +8,7 @@ import {
   useDailySeries,
   useOverallStats,
   useTokenHeatmap,
+  useTokenRates,
   useToolBreakdown,
 } from "@/hooks/useStatistics";
 import type { StatsRange } from "@/types";
@@ -16,6 +17,7 @@ import { DailyRequestsChart } from "@/components/stats/DailyRequestsChart";
 import { DailyTokensChart } from "@/components/stats/DailyTokensChart";
 import { KpiRow } from "@/components/stats/KpiRow";
 import { SubscriptionTable } from "@/components/stats/SubscriptionTable";
+import { TokenRateTable } from "@/components/stats/TokenRateTable";
 import { ToolTopChart } from "@/components/stats/ToolTopChart";
 import { VmShareDonut } from "@/components/stats/VmShareDonut";
 import { YearHeatmap } from "@/components/stats/YearHeatmap";
@@ -48,6 +50,7 @@ export function StatisticsPage() {
   const byVm = useBreakdown(range, "virtual_model");
   const bySub = useBreakdown(range, "subscription");
   const tools = useToolBreakdown(range, 10);
+  const rates = useTokenRates(range);
 
   const isFetching = useIsFetching({ queryKey: [STATS_KEY] }) > 0;
   const refetchAll = () => queryClient.invalidateQueries({ queryKey: [STATS_KEY] });
@@ -106,6 +109,7 @@ export function StatisticsPage() {
         <DailyLatencyChart buckets={buckets} loading={daily.isFetching} errorText={err(daily.error)} />
       </div>
       <ToolTopChart items={tools.data ?? []} loading={tools.isFetching} errorText={err(tools.error)} />
+      <TokenRateTable items={rates.data ?? []} loading={rates.isFetching} errorText={err(rates.error)} />
       <SubscriptionTable items={bySub.data ?? []} loading={bySub.isFetching} errorText={err(bySub.error)} />
     </>
   );

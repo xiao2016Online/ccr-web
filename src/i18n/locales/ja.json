@@ -1186,5 +1186,13 @@
   "overview.subs.allHealthy": "すべてのサブスクリプションが正常です",
   "overview.subs.cooldown": "{mins} 分後に復帰",
   "overview.proxy.copy": "ベース URL をコピー",
-  "subscriptions.col.enabled": "有効"
+  "subscriptions.col.enabled": "有効",
+  "stats.tokenRate.title": "出力速度",
+  "stats.tokenRate.subtitle": "サブスクリプション別のデコード速度 = 出力トークン ÷（総時間 − 初回応答時間）。ストリーミング成功リクエストのみ。",
+  "stats.tokenRate.empty": "ストリーミングリクエストがありません。デコード速度にはストリーミング応答が必要です（初回応答時間はストリーム時のみ記録）。",
+  "stats.tokenRate.col.subscription": "サブスクリプション",
+  "stats.tokenRate.col.rate": "デコード速度",
+  "stats.tokenRate.col.samples": "サンプル数",
+  "stats.tokenRate.col.avgOutput": "平均出力",
+  "stats.tokenRate.unit": "tok/s"
 }

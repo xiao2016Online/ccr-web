@@ -46,6 +46,7 @@ import type {
   TestConnectionResult,
   TlsStatus,
   TokenQuotas,
+  TokenRateDto,
   ToolBreakdownDto,
   TuiInstallOutcome,
   TuiLaunchInfo,
@@ -154,6 +155,9 @@ export const api = {
     invoke<HeatmapDayDto[]>("get_token_heatmap", { days }),
   getToolBreakdown: (range: StatsRange, limit: number) =>
     invoke<ToolBreakdownDto[]>("get_tool_breakdown", { range, limit }),
+  /** 按订阅的解码速率 (tokens/s), 仅统计流式成功请求 */
+  getTokenRates: (range: StatsRange) =>
+    invoke<TokenRateDto[]>("get_token_rates", { range }),
 
   getReceiptSummary: (range: ReceiptRange) =>
     invoke<ReceiptDto>("get_receipt_summary", { range }),

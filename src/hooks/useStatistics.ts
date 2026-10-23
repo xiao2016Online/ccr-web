@@ -41,6 +41,15 @@ export function useTokenHeatmap(days = 365) {
   });
 }
 
+export function useTokenRates(range: StatsRange) {
+  return useQuery({
+    queryKey: [STATS_KEY, "token_rate", range],
+    queryFn: () => api.getTokenRates(range),
+    placeholderData: keepPreviousData,
+    staleTime: 5_000,
+  });
+}
+
 export function useToolBreakdown(range: StatsRange, limit = 10) {
   return useQuery({
     queryKey: [STATS_KEY, "tools", range, limit],

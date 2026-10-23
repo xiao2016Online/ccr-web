@@ -1186,5 +1186,13 @@
   "overview.subs.allHealthy": "全部订阅运行正常",
   "overview.subs.cooldown": "{mins} 分钟后恢复",
   "overview.proxy.copy": "复制接入地址",
-  "subscriptions.col.enabled": "启用"
+  "subscriptions.col.enabled": "启用",
+  "stats.tokenRate.title": "输出速率",
+  "stats.tokenRate.subtitle": "按订阅统计的解码速度 = 输出 token ÷（总耗时 − 首字延迟），仅统计流式成功请求。",
+  "stats.tokenRate.empty": "暂无流式请求数据。解码速率需要流式请求（首字延迟只在流式响应中记录）。",
+  "stats.tokenRate.col.subscription": "订阅",
+  "stats.tokenRate.col.rate": "解码速率",
+  "stats.tokenRate.col.samples": "样本数",
+  "stats.tokenRate.col.avgOutput": "平均输出",
+  "stats.tokenRate.unit": "tok/s"
 }

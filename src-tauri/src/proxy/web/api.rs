@@ -169,6 +169,7 @@ web_commands! {
     get_breakdown(range: StatsRange, by: BreakdownBy) => commands::statistics::get_breakdown(st, args.range, args.by).await,
     get_token_heatmap(days: u32) => commands::statistics::get_token_heatmap(st, args.days).await,
     get_tool_breakdown(range: StatsRange, limit: u32) => commands::statistics::get_tool_breakdown(st, args.range, args.limit).await,
+    get_token_rates(range: StatsRange) => commands::statistics::get_token_rates(st, args.range).await,
     get_receipt_summary(range: ReceiptRange) => commands::receipts::get_receipt_summary(st, args.range).await,
     list_events(page: u32, page_size: u32, filters: Option<EventFilters>) => commands::events::list_events(st, args.page, args.page_size, args.filters).await,
     // settings / proxy

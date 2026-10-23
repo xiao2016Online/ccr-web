@@ -480,6 +480,96 @@ pub async fn get_tool_breakdown(
         .map_err(Into::into)
 }
 
+#[derive(Debug, Serialize)]
+pub struct TokenRateDto {
+    /// subscription_id
+    pub key: String,
+    /// 订阅显示名; 订阅已删除时为 `(已删除订阅)`
+    pub label: String,
+    /// 参与统计的请求数 (流式 + 成功 + 有首字延迟 + 有输出 token)
+    pub sample_count: i64,
+    /// 平均每次请求的输出 token 数
+    pub avg_output_tokens: f64,
+    /// 解码速率 (tokens/s) = 总输出 token / 总解码时长
+    pub tokens_per_sec: f64,
+    pub total_output_tokens: i64,
+    pub total_decode_ms: i64,
+}
+
+/// 按订阅统计「解码速率」(tokens/s)。
+///
+/// 口径: `output_tokens / (total_latency - ttft)`, 即扣掉排队与首字延迟后模型真正吐字的速度。
+///
+/// 必须走 `requests` 原始表: 聚合表 `request_stats_daily` 里 `output_tokens` 含非流式请求、
+/// `ttft_ms_sum` 只有流式请求, 两者不是同一批样本, 无法还原单个请求的解码时长。
+/// `ttft_ms` 只在流式路径写入 (proxy/sse.rs), 所以这里只统计流式成功请求。
+///
+/// 速率用「总输出 / 总解码时长」的加权平均 (长请求权重更大, 代表整体吞吐), 而不是逐请求
+/// 速率再平均 (会被极短的请求拉高)。
+///
+/// 注意: `requests` 受 `log_retention_days` 清理影响 —— 保留期设为非 0 时只覆盖保留期内数据。
+pub(crate) async fn query_token_rates(
+    pool: &sqlx::SqlitePool,
+    since_ms: i64,
+) -> Result<Vec<TokenRateDto>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT r.subscription_id AS key,
+                COALESCE(s.display_name, '(已删除订阅)') AS label,
+                COUNT(*) AS sample_count,
+                SUM(r.upstream_output_tokens) AS out_tokens,
+                SUM(r.total_latency_ms - r.ttft_ms) AS decode_ms
+         FROM requests r
+         LEFT JOIN subscriptions s ON s.id = r.subscription_id
+         WHERE r.timestamp >= ?
+           AND r.is_streaming = 1
+           AND r.status = 'success'
+           AND r.ttft_ms IS NOT NULL
+           AND r.total_latency_ms > r.ttft_ms
+           AND r.upstream_output_tokens > 0
+         GROUP BY r.subscription_id
+         ORDER BY (CAST(SUM(r.upstream_output_tokens) AS REAL) * 1000.0
+                   / NULLIF(SUM(r.total_latency_ms - r.ttft_ms), 0)) DESC",
+    )
+    .bind(since_ms)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter()
+        .map(|r| {
+            let sample_count: i64 = r.try_get("sample_count")?;
+            let out_tokens: i64 = r.try_get("out_tokens")?;
+            let decode_ms: i64 = r.try_get("decode_ms")?;
+            Ok(TokenRateDto {
+                key: r.try_get("key")?,
+                label: r.try_get("label")?,
+                sample_count,
+                avg_output_tokens: if sample_count > 0 {
+                    out_tokens as f64 / sample_count as f64
+                } else {
+                    0.0
+                },
+                tokens_per_sec: if decode_ms > 0 {
+                    out_tokens as f64 * 1000.0 / decode_ms as f64
+                } else {
+                    0.0
+                },
+                total_output_tokens: out_tokens,
+                total_decode_ms: decode_ms,
+            })
+        })
+        .collect()
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn get_token_rates(
+    state: State<'_, AppState>,
+    range: StatsRange,
+) -> AppResult<Vec<TokenRateDto>> {
+    query_token_rates(&state.db, range.since_ms())
+        .await
+        .map_err(Into::into)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,5 +610,70 @@ mod tests {
         let all = query_tool_breakdown(&pool, "", 2).await.unwrap();
         assert_eq!(all.len(), 2, "limit 生效");
         assert_eq!(all[0].call_count, 100);
+    }
+
+    /// 解码速率: 只统计「流式 + 成功 + 有 ttft + 有输出 token」的请求,
+    /// 并按 总输出/总解码时长 加权; 订阅已删除时 label 回退。
+    #[tokio::test]
+    async fn token_rates_filter_streaming_success_and_weight_by_decode_time() {
+        let pool = fresh_pool().await;
+        let now = now_ms();
+
+        // 插一条订阅, 用于验证 label 取自 subscriptions 表
+        sqlx::query(
+            "INSERT INTO subscriptions (id, provider_id, endpoint_id, display_name, api_key,
+                model_slot_opus, model_slot_sonnet, model_slot_haiku,
+                created_at, updated_at, base_url, messages_path,
+                auth_header_name, auth_header_format, provider_display_name)
+             VALUES ('sub-fast', 'anthropic', 'anthropic', '快速订阅', 'k',
+                'm', 'm', 'm', ?, ?, 'https://example.com', '/v1/messages',
+                'x-api-key', 'raw', 'Anthropic')",
+        )
+        .bind(now).bind(now).execute(&pool).await.unwrap();
+
+        // (id, sub, ts, is_streaming, status, ttft, total, out_tokens)
+        let rows = [
+            // sub-fast: 2 条有效 -> 输出 1000+2000, 解码 (1100-100)+(2200-200) = 3000ms
+            ("r1", "sub-fast", now, 1, "success", Some(100i64), Some(1100i64), Some(1000i64)),
+            ("r2", "sub-fast", now, 1, "success", Some(200), Some(2200), Some(2000)),
+            // 非流式 (ttft NULL): 应被排除
+            ("r3", "sub-fast", now, 0, "success", None, Some(5000), Some(9999)),
+            // 失败请求: 应被排除
+            ("r4", "sub-fast", now, 1, "error", Some(100), Some(900), Some(500)),
+            // ttft >= total (异常样本): 应被排除
+            ("r5", "sub-fast", now, 1, "success", Some(900), Some(900), Some(300)),
+            // sub-slow: 输出 100, 解码 2000ms -> 慢得多
+            ("r6", "sub-slow", now, 1, "success", Some(1000), Some(3000), Some(100)),
+        ];
+        for (id, sub, ts, streaming, status, ttft, total, out) in rows {
+            sqlx::query(
+                "INSERT INTO requests (id, timestamp, virtual_model_name, subscription_id, provider_id,
+                    endpoint_id, real_model_name, is_streaming, status, ttft_ms, total_latency_ms,
+                    upstream_output_tokens)
+                 VALUES (?, ?, 'model-opus', ?, 'anthropic', 'anthropic', 'claude', ?, ?, ?, ?, ?)",
+            )
+            .bind(id).bind(ts).bind(sub).bind(streaming).bind(status)
+            .bind(ttft).bind(total).bind(out)
+            .execute(&pool).await.unwrap();
+        }
+
+        let got = query_token_rates(&pool, 0).await.unwrap();
+        assert_eq!(got.len(), 2, "两个订阅各一行");
+        // 快的排前面
+        assert_eq!(got[0].key, "sub-fast");
+        assert_eq!(got[0].label, "快速订阅", "label 取自 subscriptions.display_name");
+        assert_eq!(got[0].sample_count, 2, "非流式/失败/ttft>=total 的都被排除");
+        assert_eq!(got[0].total_output_tokens, 3000);
+        assert_eq!(got[0].total_decode_ms, 3000);
+        assert!((got[0].tokens_per_sec - 1000.0).abs() < 1e-6);
+        assert!((got[0].avg_output_tokens - 1500.0).abs() < 1e-6);
+
+        assert_eq!(got[1].key, "sub-slow");
+        assert_eq!(got[1].label, "(已删除订阅)", "订阅不存在时回退文案");
+        assert!((got[1].tokens_per_sec - 50.0).abs() < 1e-6);
+
+        // 时间下限过滤: 全部数据都在 now, 用未来时间点应查不到
+        let none = query_token_rates(&pool, now + 10_000).await.unwrap();
+        assert!(none.is_empty(), "since_ms 生效");
     }
 }

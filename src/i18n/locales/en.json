@@ -1186,5 +1186,13 @@
   "overview.subs.allHealthy": "All subscriptions are healthy",
   "overview.subs.cooldown": "Recovers in {mins} min",
   "overview.proxy.copy": "Copy base URL",
-  "subscriptions.col.enabled": "Enabled"
+  "subscriptions.col.enabled": "Enabled",
+  "stats.tokenRate.title": "Output speed",
+  "stats.tokenRate.subtitle": "Decode speed per subscription = output tokens ÷ (latency − TTFT). Streaming successful requests only.",
+  "stats.tokenRate.empty": "No streaming requests yet. Decode speed needs streaming responses (TTFT is only recorded for streams).",
+  "stats.tokenRate.col.subscription": "Subscription",
+  "stats.tokenRate.col.rate": "Decode speed",
+  "stats.tokenRate.col.samples": "Samples",
+  "stats.tokenRate.col.avgOutput": "Avg output",
+  "stats.tokenRate.unit": "tok/s"
 }

@@ -844,6 +844,22 @@ export interface ToolBreakdownDto {
   call_count: number;
 }
 
+/** 按订阅统计的解码速率 (commands/statistics.rs::TokenRateDto)。 */
+export interface TokenRateDto {
+  /** subscription_id */
+  key: string;
+  /** 订阅显示名; 已删除订阅为 "(已删除订阅)" */
+  label: string;
+  /** 参与统计的请求数 (流式 + 成功 + 有首字延迟) */
+  sample_count: number;
+  /** 平均每次请求的输出 token 数 */
+  avg_output_tokens: number;
+  /** 解码速率 (tokens/s) */
+  tokens_per_sec: number;
+  total_output_tokens: number;
+  total_decode_ms: number;
+}
+
 /**
  * Live Routing「客户端接入」聚合行 (commands/requests.rs::ClientActivityDto)。
  * 由 requests.client_tool 分组的被动流量检测结果 —— 哪个客户端最近真的走了 cc-router。

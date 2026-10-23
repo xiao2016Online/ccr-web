@@ -184,6 +184,7 @@ pub fn run() {
             commands::statistics::get_breakdown,
             commands::statistics::get_token_heatmap,
             commands::statistics::get_tool_breakdown,
+            commands::statistics::get_token_rates,
             commands::receipts::get_receipt_summary,
             commands::events::list_events,
             commands::settings::get_settings,
