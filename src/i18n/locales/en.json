@@ -1194,5 +1194,17 @@
   "stats.tokenRate.col.rate": "Decode speed",
   "stats.tokenRate.col.samples": "Samples",
   "stats.tokenRate.col.avgOutput": "Avg output",
-  "stats.tokenRate.unit": "tok/s"
+  "stats.tokenRate.unit": "tok/s",
+  "stats.cacheHit.title": "Cache hits",
+  "stats.cacheHit.subtitle": "Cache read rate per subscription = cache read ÷ all input-side tokens (incl. writes). Cache tokens are recorded for streaming requests only.",
+  "stats.cacheHit.empty": "No cache data yet. Send requests through a model with prompt caching (e.g. Claude) to see it here.",
+  "stats.cacheHit.col.subscription": "Subscription",
+  "stats.cacheHit.col.composition": "Composition",
+  "stats.cacheHit.col.readRate": "Read rate",
+  "stats.cacheHit.col.readTotal": "Cache read",
+  "stats.cacheHit.col.requests": "Requests",
+  "stats.cacheHit.legend.read": "Cache read",
+  "stats.cacheHit.legend.write": "Cache write",
+  "stats.cacheHit.legend.miss": "Miss",
+  "stats.cacheHit.rowTip": "read {read} · write {write} · miss {miss} tokens"
 }

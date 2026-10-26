@@ -17,6 +17,7 @@ import { DailyRequestsChart } from "@/components/stats/DailyRequestsChart";
 import { DailyTokensChart } from "@/components/stats/DailyTokensChart";
 import { KpiRow } from "@/components/stats/KpiRow";
 import { SubscriptionTable } from "@/components/stats/SubscriptionTable";
+import { CacheHitTable } from "@/components/stats/CacheHitTable";
 import { TokenRateTable } from "@/components/stats/TokenRateTable";
 import { ToolTopChart } from "@/components/stats/ToolTopChart";
 import { VmShareDonut } from "@/components/stats/VmShareDonut";
@@ -110,6 +111,7 @@ export function StatisticsPage() {
       </div>
       <ToolTopChart items={tools.data ?? []} loading={tools.isFetching} errorText={err(tools.error)} />
       <TokenRateTable items={rates.data ?? []} loading={rates.isFetching} errorText={err(rates.error)} />
+      <CacheHitTable items={bySub.data ?? []} loading={bySub.isFetching} errorText={err(bySub.error)} />
       <SubscriptionTable items={bySub.data ?? []} loading={bySub.isFetching} errorText={err(bySub.error)} />
     </>
   );

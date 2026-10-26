@@ -1194,5 +1194,17 @@
   "stats.tokenRate.col.rate": "解码速率",
   "stats.tokenRate.col.samples": "样本数",
   "stats.tokenRate.col.avgOutput": "平均输出",
-  "stats.tokenRate.unit": "tok/s"
+  "stats.tokenRate.unit": "tok/s",
+  "stats.cacheHit.title": "缓存命中",
+  "stats.cacheHit.subtitle": "按订阅的缓存读取率 = 命中读取 ÷ 输入侧全部 token（含写入）。缓存 token 仅在流式请求中统计。",
+  "stats.cacheHit.empty": "暂无缓存数据。使用支持提示缓存的模型（如 Claude 系列）产生请求后即可看到。",
+  "stats.cacheHit.col.subscription": "订阅",
+  "stats.cacheHit.col.composition": "缓存构成",
+  "stats.cacheHit.col.readRate": "读取率",
+  "stats.cacheHit.col.readTotal": "命中量",
+  "stats.cacheHit.col.requests": "请求数",
+  "stats.cacheHit.legend.read": "命中读取",
+  "stats.cacheHit.legend.write": "缓存写入",
+  "stats.cacheHit.legend.miss": "未命中",
+  "stats.cacheHit.rowTip": "命中读取 {read} · 缓存写入 {write} · 未命中 {miss} tokens"
 }

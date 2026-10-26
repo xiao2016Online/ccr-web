@@ -1194,5 +1194,17 @@
   "stats.tokenRate.col.rate": "デコード速度",
   "stats.tokenRate.col.samples": "サンプル数",
   "stats.tokenRate.col.avgOutput": "平均出力",
-  "stats.tokenRate.unit": "tok/s"
+  "stats.tokenRate.unit": "tok/s",
+  "stats.cacheHit.title": "キャッシュヒット",
+  "stats.cacheHit.subtitle": "サブスクリプション別のキャッシュ読取率 = キャッシュ読取 ÷ 入力側全トークン（書込含む）。キャッシュ情報はストリーミングリクエストのみ記録されます。",
+  "stats.cacheHit.empty": "キャッシュデータがありません。プロンプトキャッシュ対応モデル（Claude など）でリクエストを送ると表示されます。",
+  "stats.cacheHit.col.subscription": "サブスクリプション",
+  "stats.cacheHit.col.composition": "構成",
+  "stats.cacheHit.col.readRate": "読取率",
+  "stats.cacheHit.col.readTotal": "読取量",
+  "stats.cacheHit.col.requests": "リクエスト数",
+  "stats.cacheHit.legend.read": "キャッシュ読取",
+  "stats.cacheHit.legend.write": "キャッシュ書込",
+  "stats.cacheHit.legend.miss": "ミス",
+  "stats.cacheHit.rowTip": "読取 {read} · 書込 {write} · ミス {miss} トークン"
 }
