@@ -346,3 +346,10 @@
   border: 1px solid var(--line-2);
   box-shadow: var(--shadow-sm);
 }
+
+/* 虚拟模型路由图: 只需横向滚动。overflow-x:auto 会让 overflow-y 也计算成 auto,
+   内容高度差一点就冒出无意义的竖直滚动条, 这里显式关掉纵向滚动。 */
+:where([data-theme="techblue"]) .vrm-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
