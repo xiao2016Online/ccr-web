@@ -1,12 +1,14 @@
 id: openai
 display_name:
   zh: "OpenAI 官方 API"
+  zh-Hant: "OpenAI 官方 API"
   en: "OpenAI API"
   ja: "OpenAI 公式 API"
 icon: openai
 category: first_party
 description:
   zh: "openai.com 官方 /v1/responses, 使用 platform.openai.com 控制台生成的 sk-... API Key. cc-router 做 Anthropic Messages ↔ OpenAI Responses 协议翻译, 客户端 stream 决定上游 stream, reasoning 双向支持 (Claude Code 看到 thinking 块 + 多轮 reasoning 上下文延续)."
+  zh-Hant: "openai.com 官方 /v1/responses, 使用 platform.openai.com 控制台生成的 sk-... API Key. cc-router 做 Anthropic Messages ↔ OpenAI Responses 協議翻譯, 客戶端 stream 決定上游 stream, reasoning 雙向支援 (Claude Code 看到 thinking 塊 + 多輪 reasoning 上下文延續)."
   en: "Official openai.com /v1/responses, using an sk-... API key created in the platform.openai.com console. cc-router translates between Anthropic Messages and OpenAI Responses; the client's stream setting decides the upstream stream, and reasoning works both ways (Claude Code sees thinking blocks, and reasoning context carries across turns)."
   ja: "openai.com 公式の /v1/responses。platform.openai.com コンソールで発行した sk-... API Key を使用します。cc-router が Anthropic Messages ↔ OpenAI Responses のプロトコル変換を行い、上流のストリーミング有無はクライアントの stream に従います。reasoning は双方向に対応します（Claude Code で thinking ブロックが見え、複数ターンで reasoning のコンテキストが引き継がれます）。"
 homepage: "https://openai.com"
@@ -16,6 +18,7 @@ api_key_url: "https://platform.openai.com/api-keys"
 compatibility: untested
 compatibility_notes:
   zh: "中转层协议实测通过, 官方端点 sk- API key 尚待用户实测确认"
+  zh-Hant: "中轉層協議實測通過, 官方端點 sk- API key 尚待使用者實測確認"
   en: "Verified against relay services; the official endpoint with an sk- API key is still awaiting user confirmation."
   ja: "中継サービスでは実測で動作確認済み。公式エンドポイントでの sk- API Key はユーザーによる確認待ちです。"
 
@@ -23,10 +26,12 @@ endpoints:
   - id: paid
     label:
       zh: "OpenAI · 官方付费"
+      zh-Hant: "OpenAI · 官方付費"
       en: "OpenAI · Official (paid)"
       ja: "OpenAI · 公式（有料）"
     description:
       zh: "api.openai.com/v1/responses, 按使用量计费 (input/output tokens), reasoning 模型 (o-series, gpt-5) 额外按 reasoning_tokens 计费."
+      zh-Hant: "api.openai.com/v1/responses, 按使用量計費 (input/output tokens), reasoning 模型 (o-series, gpt-5) 額外按 reasoning_tokens 計費."
       en: "api.openai.com/v1/responses, billed by usage (input/output tokens); reasoning models (o-series, gpt-5) are additionally billed for reasoning_tokens."
       ja: "api.openai.com/v1/responses。使用量（input/output tokens）に応じて課金され、reasoning モデル（o-series、gpt-5）は reasoning_tokens も追加で課金されます。"
     base_url: "https://api.openai.com"

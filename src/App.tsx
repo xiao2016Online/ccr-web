@@ -13,8 +13,6 @@ import { StatisticsPage } from "@/routes/Statistics";
 import { ReceiptsPage } from "@/routes/Receipts";
 import { AboutPage } from "@/routes/About";
 import { GuidePage } from "@/routes/Guide";
-import { OnboardingDisclaimerPage } from "@/routes/OnboardingDisclaimer";
-import { OnboardingGate } from "@/components/layout/OnboardingGate";
 import { useSubscriptionEventBridge } from "@/hooks/useSubscriptions";
 import { useRouteFlashListener } from "@/hooks/useRouteFlash";
 import { useSettingsEventBridge, useUpdateSourceAutoInit } from "@/hooks/useSettings";
@@ -38,20 +36,10 @@ function AppInner() {
   useUpdaterAutoCheck();
   return (
     <Routes>
-      {/* 免责声明门禁: 全屏顶层路由, 不进 OnboardingGate / AppShell */}
-      <Route path="/onboarding/disclaimer" element={<OnboardingDisclaimerPage />} />
-      {/* 兼容旧链接: 引导壳已删, 旧 /onboarding 转到订阅向导 */}
-      <Route
-        path="/onboarding"
-        element={<Navigate to="/subscriptions/new?onboarding=1" replace />}
-      />
-      <Route
-        element={
-          <OnboardingGate>
-            <AppShell />
-          </OnboardingGate>
-        }
-      >
+      {/* 兼容旧链接: 引导改成主界面上的窗口 (OnboardingHost), 旧的全屏页路由一律回首页 */}
+      <Route path="/onboarding/*" element={<Navigate to="/" replace />} />
+      <Route element={<AppShell />}>
+        {/* 服务器版: 登录后默认落在概览页 */}
         <Route index element={<OverviewPage />} />
         <Route path="/overview" element={<OverviewPage />} />
         <Route path="/live-routing" element={<LiveRoutingPage />} />

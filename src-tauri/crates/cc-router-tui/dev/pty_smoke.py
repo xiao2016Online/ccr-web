@@ -155,14 +155,14 @@ DATA = {
             "translations": {
                 lang: {"display_name": "Zhipu GLM", "description": None, "endpoints": {
                     "default": {"label": "Default"}, "intl": {"label": "International"},
-                }} for lang in ("en", "ja")
+                }} for lang in ("zh-Hant", "en", "ja")
             },
         },
         {
             "id": "chatgpt", "display_name": "ChatGPT", "description": None,
             "endpoints": [], "default_endpoint": None, "auth": {"type": "chatgpt_oauth"},
             "model_discovery": {"enabled": False, "example_models": []},
-            "translations": {lang: {"display_name": "ChatGPT", "description": None, "endpoints": {}} for lang in ("en", "ja")},
+            "translations": {lang: {"display_name": "ChatGPT", "description": None, "endpoints": {}} for lang in ("zh-Hant", "en", "ja")},
         },
         # 带 url_params 的厂商 (照 cloudflare 精简): 只保证新字段不会让 TUI 崩, 脚本不走它。
         {
@@ -180,7 +180,7 @@ DATA = {
                 lang: {"display_name": "Cloudflare", "description": None,
                        "endpoints": {"direct": {"label": "Direct"}},
                        "url_params": {"account_id": {"label": "Account ID", "placeholder": "32 hex chars"}}}
-                for lang in ("en", "ja")
+                for lang in ("zh-Hant", "en", "ja")
             },
         },
     ],

@@ -1,12 +1,14 @@
 id: baidu
 display_name:
   zh: "百度千帆"
+  zh-Hant: "百度千帆"
   en: "Baidu AI Cloud Qianfan"
   ja: "Baidu AI Cloud Qianfan"
 icon: baidu
 category: first_party
 description:
   zh: "百度智能云千帆 Coding Plan 订阅, Anthropic 兼容端点"
+  zh-Hant: "百度智慧雲千帆 Coding Plan 訂閱, Anthropic 相容端點"
   en: "Baidu AI Cloud Qianfan Coding Plan subscription, Anthropic-compatible endpoint"
   ja: "Baidu AI Cloud Qianfan Coding Plan サブスクリプション、Anthropic 互換エンドポイント"
 homepage: "https://qianfan.cloud.baidu.com"
@@ -18,6 +20,9 @@ compatibility_notes:
   zh: |
     千帆未提供公开的 /v1/models 接口, 模型需手动填写。
     Coding Plan 推荐使用 qianfan-code-latest 作为统一模型, 由平台路由到底层文心系/混合模型。
+  zh-Hant: |
+    千帆未提供公開的 /v1/models 介面, 模型需手動填寫。
+    Coding Plan 推薦使用 qianfan-code-latest 作為統一模型, 由平台路由到底層文心系/混合模型。
   en: |
     Qianfan has no public /v1/models endpoint, so models must be entered manually.
     For Coding Plan, qianfan-code-latest is recommended as a single model; the platform routes it to the underlying ERNIE / hybrid models.
@@ -29,10 +34,12 @@ endpoints:
   - id: coding_plan
     label:
       zh: "国内版 · Coding Plan"
+      zh-Hant: "中國版 · Coding Plan"
       en: "China · Coding Plan"
       ja: "中国版 · Coding Plan"
     description:
       zh: "百度智能云千帆 Coding Plan, 订阅制"
+      zh-Hant: "百度智慧雲千帆 Coding Plan, 訂閱制"
       en: "Baidu AI Cloud Qianfan Coding Plan, subscription-based"
       ja: "Baidu AI Cloud Qianfan Coding Plan、サブスクリプション制"
     base_url: "https://qianfan.baidubce.com/anthropic/coding"
@@ -43,10 +50,12 @@ endpoints:
   - id: pay_as_you_go_baidu
     label:
       zh: "国内版 · 按量付费 API"
+      zh-Hant: "中國版 · 按量計費 API"
       en: "China · Pay-as-you-go API"
       ja: "中国版 · 従量課金 API"
     description:
       zh: "百度智能云千帆"
+      zh-Hant: "百度智慧雲千帆"
       en: "Baidu AI Cloud Qianfan"
       ja: "Baidu AI Cloud Qianfan"
     base_url: "https://qianfan.baidubce.com/anthropic"

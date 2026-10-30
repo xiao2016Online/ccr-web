@@ -9,7 +9,7 @@ use crate::provider::Provider;
 use crate::state::AppState;
 
 /// 上屏文字字段 (`display_name` / `description` / `compatibility_notes` / 端点的 `label` / `description`)
-/// 放中文原文; 英日文在 `translations` 里, 由客户端按自己的界面语言叠加 —— 桌面端、网页界面、TUI
+/// 放中文原文; 繁中 / 英 / 日文在 `translations` 里, 由客户端按自己的界面语言叠加 —— 桌面端、网页界面、TUI
 /// 的语言可能各不相同, 后端不替它们选。
 #[derive(Debug, Serialize)]
 pub struct ProviderInfo {
@@ -61,9 +61,11 @@ pub struct ProviderEndpointInfo {
     pub url_params_used: Vec<String>,
 }
 
-/// 三语齐全 (yaml 解析时已强制), 所以每种语言都是完整的一份, 客户端不需要回退。
+/// 四语齐全 (yaml 解析时已强制), 所以每种语言都是完整的一份, 客户端不需要回退。
 #[derive(Debug, Serialize)]
 pub struct ProviderTranslations {
+    #[serde(rename = "zh-Hant")]
+    pub zh_hant: ProviderText,
     pub en: ProviderText,
     pub ja: ProviderText,
 }
@@ -160,6 +162,7 @@ impl From<&Provider> for ProviderInfo {
                 })
                 .collect(),
             translations: ProviderTranslations {
+                zh_hant: ProviderText::pick(p, |t| &t.zh_hant),
                 en: ProviderText::pick(p, |t| &t.en),
                 ja: ProviderText::pick(p, |t| &t.ja),
             },
@@ -170,7 +173,7 @@ impl From<&Provider> for ProviderInfo {
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_providers(state: State<'_, AppState>) -> AppResult<Vec<ProviderInfo>> {
     let mut out: Vec<ProviderInfo> = state.providers.values().map(ProviderInfo::from).collect();
-    // 三种界面语言都按英文名排, 顺序一致; 忽略大小写 (否则 `xAI` 会排到 `Zhipu` 后面)。
+    // 四种界面语言都按英文名排, 顺序一致; 忽略大小写 (否则 `xAI` 会排到 `Zhipu` 后面)。
     out.sort_by_cached_key(|p| p.translations.en.display_name.to_lowercase());
     Ok(out)
 }

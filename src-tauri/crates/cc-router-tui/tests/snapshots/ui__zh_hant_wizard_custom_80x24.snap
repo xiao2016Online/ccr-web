@@ -1,0 +1,28 @@
+---
+source: crates/cc-router-tui/tests/ui.rs
+expression: "render(&mut custom_wizard_probed_and_filled(), 80, 24)"
+---
+"╭ cc-router ───────────────────────────────────────────────────────── ⠯ 連線中 ╮" Hidden by multi-width symbols: [(73, " "), (75, " "), (77, " ")]
+"│ 1 總覽   2 訂閱   3 虛擬模型   4 即時路由   5 紀錄                           │" Hidden by multi-width symbols: [(5, " "), (7, " "), (14, " "), (16, " "), (23, " "), (25, " "), (27, " "), (29, " "), (36, " "), (38, " "), (40, " "), (42, " "), (49, " "), (51, " ")]
+"╰──────────────────────────────────────────────────────────────────────────────╯"
+"╭ 新建訂閱 · 自訂 ─────────────────────────────────────────────────────────────╮" Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (14, " "), (16, " ")]
+"│                                                                              │"
+"│    協議        Anthropic 相容                                        ⏎ 選擇  │" Hidden by multi-width symbols: [(6, " "), (8, " "), (28, " "), (30, " "), (74, " "), (76, " ")]
+"│    廠商名      我的中转                                                      │" Hidden by multi-width symbols: [(6, " "), (8, " "), (10, " "), (18, " "), (20, " "), (22, " "), (24, " ")]
+"│    Base URL    https://api.example.com                                       │"
+"│    請求路徑    /v1/messages                                                  │" Hidden by multi-width symbols: [(6, " "), (8, " "), (10, " "), (12, " ")]
+"│    驗證        Authorization · Bearer                                ⏎ 選擇  │" Hidden by multi-width symbols: [(6, " "), (8, " "), (74, " "), (76, " ")]
+"│    API Key     ••••••                                    Ctrl+R 顯示 / 隱藏  │" Hidden by multi-width symbols: [(67, " "), (69, " "), (74, " "), (76, " ")]
+"│    備註名      我的中转                                                      │" Hidden by multi-width symbols: [(6, " "), (8, " "), (10, " "), (18, " "), (20, " "), (22, " "), (24, " ")]
+"│                               [ 取得模型列表 ]                               │" Hidden by multi-width symbols: [(35, " "), (37, " "), (39, " "), (41, " "), (43, " "), (45, " ")]
+"│    fable       claude-sonnet-4                                       ⏎ 選擇  │" Hidden by multi-width symbols: [(74, " "), (76, " ")]
+"│    opus        claude-sonnet-4                                       ⏎ 選擇  │" Hidden by multi-width symbols: [(74, " "), (76, " ")]
+"│    sonnet      claude-sonnet-4                                       ⏎ 選擇  │" Hidden by multi-width symbols: [(74, " "), (76, " ")]
+"│    haiku       claude-haiku-4                                        ⏎ 選擇  │" Hidden by multi-width symbols: [(74, " "), (76, " ")]
+"│  ▌ 備援        (未設定)                                              ⏎ 選擇  │" Hidden by multi-width symbols: [(6, " "), (8, " "), (19, " "), (21, " "), (23, " "), (74, " "), (76, " ")]
+"│                                   [ 建立 ]                                   │" Hidden by multi-width symbols: [(39, " "), (41, " ")]
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"╰──────────────────────────────────────────────────────────────────────────────╯"
+" ↑↓ 欄位   ⏎ 選擇                                                      Esc 取消 " Hidden by multi-width symbols: [(5, " "), (7, " "), (14, " "), (16, " "), (76, " "), (78, " ")]

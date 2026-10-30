@@ -1,12 +1,14 @@
 id: zhipu
 display_name:
   zh: "智谱 GLM"
+  zh-Hant: "智譜 GLM"
   en: "Zhipu GLM"
   ja: "Zhipu GLM"
 icon: zhipu
 category: first_party
 description:
   zh: "智谱 AI 官方 Anthropic 兼容端点"
+  zh-Hant: "智譜 AI 官方 Anthropic 相容端點"
   en: "Official Zhipu AI Anthropic-compatible endpoint"
   ja: "Zhipu AI 公式の Anthropic 互換エンドポイント"
 homepage: "https://open.bigmodel.cn"
@@ -19,6 +21,7 @@ endpoints:
   - id: cn_endpoint_coding_plan
     label:
       zh: "国内版 · Coding Plan 订阅"
+      zh-Hant: "中國版 · Coding Plan 訂閱"
       en: "China · Coding Plan subscription"
       ja: "中国版 · Coding Plan サブスクリプション"
     description: "GLM Coding Plan"
@@ -30,10 +33,12 @@ endpoints:
   - id: cn_endpoint
     label:
       zh: "国内版 · 按量付费 API"
+      zh-Hant: "中國版 · 按量計費 API"
       en: "China · Pay-as-you-go API"
       ja: "中国版 · 従量課金 API"
     description:
       zh: "智谱官方提供的 Anthropic Messages 兼容端点"
+      zh-Hant: "智譜官方提供的 Anthropic Messages 相容端點"
       en: "Anthropic Messages-compatible endpoint provided by Zhipu"
       ja: "Zhipu 公式が提供する Anthropic Messages 互換エンドポイント"
     base_url: "https://open.bigmodel.cn/api"
@@ -47,10 +52,12 @@ endpoints:
   - id: intl_endpoint_coding_plan
     label:
       zh: "国际版 · Coding Plan 订阅"
+      zh-Hant: "國際版 · Coding Plan 訂閱"
       en: "International · Coding Plan subscription"
       ja: "国際版 · Coding Plan サブスクリプション"
     description:
       zh: "Z.ai GLM Coding Plan, 需使用 Z.ai 的 API Key"
+      zh-Hant: "Z.ai GLM Coding Plan, 需使用 Z.ai 的 API Key"
       en: "Z.ai GLM Coding Plan; requires a Z.ai API key"
       ja: "Z.ai GLM Coding Plan。Z.ai の API Key が必要です"
     base_url: "https://api.z.ai/api"
@@ -61,10 +68,12 @@ endpoints:
   - id: intl_endpoint
     label:
       zh: "国际版 · 按量付费 API"
+      zh-Hant: "國際版 · 按量計費 API"
       en: "International · Pay-as-you-go API"
       ja: "国際版 · 従量課金 API"
     description:
       zh: "Z.ai 提供的 Anthropic Messages 兼容端点, 需使用 Z.ai 的 API Key"
+      zh-Hant: "Z.ai 提供的 Anthropic Messages 相容端點, 需使用 Z.ai 的 API Key"
       en: "Anthropic Messages-compatible endpoint provided by Z.ai; requires a Z.ai API key"
       ja: "Z.ai が提供する Anthropic Messages 互換エンドポイント。Z.ai の API Key が必要です"
     base_url: "https://api.z.ai/api"

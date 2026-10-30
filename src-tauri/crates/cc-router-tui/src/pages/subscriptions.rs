@@ -548,10 +548,16 @@ impl Subscriptions {
                     fit(sub.provider_name(s.lang), PROVIDER_COL),
                     if muted { muted_style } else { Style::default() },
                 )));
-                cells.push(Cell::from(Span::styled(
-                    fit(&sub.model_slots.sonnet, sonnet_col),
-                    if muted { muted_style } else { Style::default() },
-                )));
+                // 列表显示 sonnet 槽此刻生效的模型 (配了时段规则的槽位由后端算好); 此刻没有模型
+                // 可用时显示 muted 的「此时段不可用」。没配规则的槽位仍显示槽位自己的值 (含空串)。
+                let sonnet_cell = match sub.slot_now(Slot::Sonnet) {
+                    None if sub.slot_is_scheduled(Slot::Sonnet) => Span::styled(fit(s.slot_unavailable_now, sonnet_col), muted_style),
+                    now => Span::styled(
+                        fit(now.unwrap_or(&sub.model_slots.sonnet), sonnet_col),
+                        if muted { muted_style } else { Style::default() },
+                    ),
+                };
+                cells.push(Cell::from(sonnet_cell));
                 Row::new(cells)
             })
             .collect();
@@ -990,7 +996,9 @@ fn slot_model_col(width: u16, model_slots: &ModelSlots, s: &'static Strings) -> 
 fn slot_line(
     name: &'static str,
     model: &str,
+    now: Option<Option<&str>>,
     effort: Option<&str>,
+    scheduled: bool,
     model_col: usize,
     theme: &Theme,
     s: &'static Strings,
@@ -1002,11 +1010,16 @@ fn slot_line(
         _ => s.sub_effort_auto.to_string(),
     };
     let effort_style = if effort.is_some_and(|e| !e.is_empty()) { Style::default() } else { theme.muted_style() };
-    let mut spans = vec![
-        Span::raw(format!("  {}", fit(name, slot_name_col(s)))),
-        Span::styled(fit(model, model_col), model_style(model, theme)),
-        Span::styled(effort_text, effort_style),
-    ];
+    // `now`: 配了时段规则且没在编辑时, 此刻生效的模型 (内层 None = 此刻不可用)。
+    let model_span = match now {
+        Some(None) => Span::styled(fit(s.slot_unavailable_now, model_col), theme.muted_style()),
+        Some(Some(m)) => Span::styled(fit(m, model_col), model_style(m, theme)),
+        None => Span::styled(fit(model, model_col), model_style(model, theme)),
+    };
+    let mut spans = vec![Span::raw(format!("  {}", fit(name, slot_name_col(s)))), model_span, Span::styled(effort_text, effort_style)];
+    if scheduled {
+        spans.push(Span::styled(format!(" · {}", s.slot_scheduled), theme.muted_style()));
+    }
     if modified {
         spans.push(Span::raw(" "));
         spans.push(Span::styled(s.sub_slot_modified, theme.muted_style()));
@@ -1164,9 +1177,15 @@ fn detail_rows(
             let name = slot_label(slot, s);
             let model = model_slots.get(slot);
             let effort = slot_efforts.get(slot);
-            let modified = model != sub.model_slots.get(slot) || effort != sub.slot_efforts.get(slot);
+            let model_modified = model != sub.model_slots.get(slot);
+            let modified = model_modified || effort != sub.slot_efforts.get(slot);
             let focused = focus_slot == Some(slot);
-            rows.push(DetailRow::Line(slot_line(name, model, effort, model_col, theme, s, modified, focused)));
+            // 配了时段规则的槽位显示此刻生效的模型; 正在编辑 (草稿改了默认模型) 时显示草稿值,
+            // 否则改了看不到变化。
+            let scheduled = sub.slot_is_scheduled(slot);
+            let now = if scheduled && !model_modified { Some(sub.slot_now(slot)) } else { None };
+            let line = slot_line(name, model, now, effort, scheduled, model_col, theme, s, modified, focused);
+            rows.push(DetailRow::Line(line));
         }
         let fallback_model = model_slots.get(Slot::Fallback);
         let fallback_modified = fallback_model != sub.model_slots.get(Slot::Fallback);
@@ -1382,6 +1401,8 @@ mod tests {
             endpoint_protocol: "messages".into(),
             model_slots: ModelSlots { fable: "d".into(), opus: "a".into(), sonnet: "b".into(), haiku: "c".into(), fallback: String::new(), jev: String::new() },
             slot_efforts: Default::default(),
+            slot_models_now: Default::default(),
+            slot_schedules: Default::default(),
             referenced_by: vec![],
             balance_supported: false,
             balance_cache: None,
@@ -1426,6 +1447,8 @@ mod tests {
             endpoint_protocol: "messages".into(),
             model_slots: ModelSlots { fable: "d".into(), opus: "a".into(), sonnet: "b".into(), haiku: "c".into(), fallback: String::new(), jev: String::new() },
             slot_efforts: Default::default(),
+            slot_models_now: Default::default(),
+            slot_schedules: Default::default(),
             referenced_by: vec![],
             balance_supported: false,
             balance_cache: None,

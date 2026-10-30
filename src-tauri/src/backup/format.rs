@@ -12,6 +12,7 @@ use crate::provider::model::{
 };
 use crate::subscription::model::{ModelSlots, OAuthMetadata, SlotEfforts, SubscriptionRow};
 use crate::subscription::quota::TokenQuotas;
+use crate::subscription::schedule::SlotSchedules;
 use crate::virtual_model::model::{RoutingMode, VirtualModelName};
 
 pub const FORMAT: &str = "cc-router-export";
@@ -47,6 +48,8 @@ pub struct ExportSubscription {
     pub model_slots: ModelSlots,
     #[serde(default)]
     pub slot_efforts: SlotEfforts,
+    #[serde(default)]
+    pub slot_schedules: SlotSchedules,
     #[serde(default)]
     pub token_quotas: TokenQuotas,
     pub enabled: bool,
@@ -212,6 +215,7 @@ pub fn subscription_to_export(row: &SubscriptionRow) -> (ExportSubscription, Ext
         oauth_metadata: _, // never exported: refresh tokens rotate and are single-use
         model_slots,
         slot_efforts,
+        slot_schedules,
         token_quotas,
         enabled,
         is_auth_failed: _, // runtime state
@@ -254,6 +258,7 @@ pub fn subscription_to_export(row: &SubscriptionRow) -> (ExportSubscription, Ext
         auth_type: *auth_type,
         model_slots: model_slots.clone(),
         slot_efforts: slot_efforts.clone(),
+        slot_schedules: slot_schedules.clone(),
         token_quotas: token_quotas.clone(),
         enabled: *enabled,
         created_at: *created_at,
@@ -301,6 +306,7 @@ pub fn export_to_row(
         oauth_metadata: OAuthMetadata::default(),
         model_slots: sub.model_slots.clone(),
         slot_efforts: sub.slot_efforts.clone(),
+        slot_schedules: sub.slot_schedules.clone(),
         token_quotas: sub.token_quotas.clone(),
         enabled,
         is_auth_failed: false,

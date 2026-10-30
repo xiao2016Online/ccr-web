@@ -4,6 +4,7 @@ icon: deepseek
 category: first_party
 description:
   zh: "DeepSeek 官方 Anthropic 兼容端点"
+  zh-Hant: "DeepSeek 官方 Anthropic 相容端點"
   en: "Official DeepSeek Anthropic-compatible endpoint"
   ja: "DeepSeek 公式の Anthropic 互換エンドポイント"
 homepage: "https://www.deepseek.com"
@@ -16,10 +17,12 @@ endpoints:
   - id: anthropic_endpoint
     label:
       zh: "国内版 · 按量付费 API"
+      zh-Hant: "中國版 · 按量計費 API"
       en: "China · Pay-as-you-go API"
       ja: "中国版 · 従量課金 API"
     description:
       zh: "DeepSeek 官方提供的 Anthropic Messages 兼容端点"
+      zh-Hant: "DeepSeek 官方提供的 Anthropic Messages 相容端點"
       en: "Anthropic Messages-compatible endpoint provided by DeepSeek"
       ja: "DeepSeek 公式が提供する Anthropic Messages 互換エンドポイント"
     base_url: "https://api.deepseek.com/anthropic"

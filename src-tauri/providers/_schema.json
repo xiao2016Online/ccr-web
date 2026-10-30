@@ -6,14 +6,14 @@
   "additionalProperties": true,
   "definitions": {
     "localizedText": {
-      "description": "上屏文字: 纯字符串 = 三语相同 (品牌名); 含中文时必须写成 zh/en/ja 对象",
+      "description": "上屏文字: 纯字符串 = 四语相同 (品牌名); 含中文时必须写成 zh/zh-Hant/en/ja 对象",
       "oneOf": [
         { "type": "string" },
         {
           "type": "object",
-          "required": ["zh", "en", "ja"],
+          "required": ["zh", "zh-Hant", "en", "ja"],
           "additionalProperties": false,
-          "properties": { "zh": { "type": "string" }, "en": { "type": "string" }, "ja": { "type": "string" } }
+          "properties": { "zh": { "type": "string" }, "zh-Hant": { "type": "string" }, "en": { "type": "string" }, "ja": { "type": "string" } }
         }
       ]
     }

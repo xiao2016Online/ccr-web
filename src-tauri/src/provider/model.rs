@@ -4,14 +4,16 @@ use std::str::FromStr;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// yaml 里上屏的文字 (厂商名 / 描述 / 端点名 ...), 三种界面语言各一份。
+/// yaml 里上屏的文字 (厂商名 / 描述 / 端点名 ...), 四种界面语言各一份。
 ///
-/// yaml 有两种写法: 纯字符串 = 三语相同 (`DeepSeek` 这类品牌名); `{zh, en, ja}` 对象 = 各写一份,
-/// 缺任何一个键都解析失败 —— 界面上没有回退逻辑, 三语必须齐全。含中文的字段不许用纯字符串写法,
+/// yaml 有两种写法: 纯字符串 = 四语相同 (`DeepSeek` 这类品牌名); `{zh, zh-Hant, en, ja}` 对象 = 各写一份,
+/// 缺任何一个键都解析失败 —— 界面上没有回退逻辑, 四语必须齐全。含中文的字段不许用纯字符串写法,
 /// 由 `loader.rs::tests::cjk_text_is_translated` 锁住。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LocalizedText {
     pub zh: String,
+    #[serde(rename = "zh-Hant")]
+    pub zh_hant: String,
     pub en: String,
     pub ja: String,
 }
@@ -19,7 +21,7 @@ pub struct LocalizedText {
 impl LocalizedText {
     pub fn same(text: impl Into<String>) -> Self {
         let text = text.into();
-        Self { zh: text.clone(), en: text.clone(), ja: text }
+        Self { zh: text.clone(), zh_hant: text.clone(), en: text.clone(), ja: text }
     }
 }
 
@@ -29,6 +31,8 @@ impl<'de> Deserialize<'de> for LocalizedText {
         #[serde(deny_unknown_fields)]
         struct PerLang {
             zh: String,
+            #[serde(rename = "zh-Hant")]
+            zh_hant: String,
             en: String,
             ja: String,
         }
@@ -39,14 +43,14 @@ impl<'de> Deserialize<'de> for LocalizedText {
         impl<'de> Visitor<'de> for TextVisitor {
             type Value = LocalizedText;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a string, or a map with zh / en / ja")
+                f.write_str("a string, or a map with zh / zh-Hant / en / ja")
             }
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
                 Ok(LocalizedText::same(v))
             }
             fn visit_map<M: MapAccess<'de>>(self, map: M) -> Result<Self::Value, M::Error> {
                 let p = PerLang::deserialize(de::value::MapAccessDeserializer::new(map))?;
-                Ok(LocalizedText { zh: p.zh, en: p.en, ja: p.ja })
+                Ok(LocalizedText { zh: p.zh, zh_hant: p.zh_hant, en: p.en, ja: p.ja })
             }
         }
         deserializer.deserialize_any(TextVisitor)

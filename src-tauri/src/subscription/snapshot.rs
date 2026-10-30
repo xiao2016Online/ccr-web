@@ -71,10 +71,10 @@ display_name: "T"
 compatibility: verified
 url_params:
   - id: account_id
-    label: {zh: "账户 ID", en: "Account ID", ja: "アカウント ID"}
+    label: {zh: "账户 ID", zh-Hant: "帳戶 ID", en: "Account ID", ja: "アカウント ID"}
     pattern: "^[0-9a-f]{32}$"
   - id: gateway_id
-    label: {zh: "网关 ID", en: "Gateway ID", ja: "ゲートウェイ ID"}
+    label: {zh: "网关 ID", zh-Hant: "閘道 ID", en: "Gateway ID", ja: "ゲートウェイ ID"}
     pattern: "^[A-Za-z0-9_-]{1,64}$"
 endpoints:
   - id: direct

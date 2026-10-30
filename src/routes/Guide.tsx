@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { type ReactNode } from "react";
+import { Link, useSearchParams } from "react-router";
 // Boxes 图标随「其他 AI Agent」tab 一起暂时下线, 恢复时加回 import
 import { Bot, Plug } from "lucide-react";
 import ClaudeCode from "@lobehub/icons/es/ClaudeCode";
@@ -19,15 +19,12 @@ import { buildRecommendedEnv } from "@/lib/recommendedClaudeCodeEnv";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-type Tab =
-  | "claude-code"
-  | "codex"
-  | "cc-switch"
-  | "openclaw"
-  | "hermes"
-  | "opencode"
-  | "generic"
-  | "others";
+const TAB_IDS = ["claude-code", "codex", "cc-switch", "openclaw", "hermes", "opencode", "generic", "others"] as const;
+type Tab = (typeof TAB_IDS)[number];
+
+function isTab(v: string | null): v is Tab {
+  return TAB_IDS.includes(v as Tab);
+}
 
 const ICON_SIZE = 14;
 const COMING_SOON_SIZE = 28;
@@ -41,7 +38,12 @@ const COMING_SOON: { name: string; icon: ReactNode }[] = [
 
 export function GuidePage() {
   const { t } = useT();
-  const [tab, setTab] = useState<Tab>("generic");
+  // 当前标签落在 `?tab=` 上 (同设置页), 引导窗口「更多工具」能直接跳到对应工具
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get("tab");
+  const tab: Tab = isTab(rawTab) ? rawTab : "generic";
+  const setTab = (next: Tab) =>
+    setSearchParams(next === "generic" ? {} : { tab: next }, { replace: true });
 
   const TABS: { id: Tab; label: string; icon: ReactNode; disabled?: boolean }[] = [
     { id: "generic", label: t("guide.tab.generic"), icon: <Plug size={ICON_SIZE} /> },

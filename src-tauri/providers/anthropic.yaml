@@ -4,6 +4,7 @@ icon: anthropic
 category: first_party
 description:
   zh: "Anthropic 官方 API（按量付费）"
+  zh-Hant: "Anthropic 官方 API（按量計費）"
   en: "Official Anthropic API (pay-as-you-go)"
   ja: "Anthropic 公式 API（従量課金）"
 homepage: "https://www.anthropic.com"
@@ -16,10 +17,12 @@ endpoints:
   - id: api_paygo
     label:
       zh: "官方 · 按量付费 API"
+      zh-Hant: "官方 · 按量計費 API"
       en: "Official · Pay-as-you-go API"
       ja: "公式 · 従量課金 API"
     description:
       zh: "api.anthropic.com，使用控制台生成的 API Key 直接付费"
+      zh-Hant: "api.anthropic.com，使用控制台生成的 API Key 直接付費"
       en: "api.anthropic.com, paid directly with an API key created in the Console"
       ja: "api.anthropic.com。Console で発行した API Key で直接支払い"
     base_url: "https://api.anthropic.com"

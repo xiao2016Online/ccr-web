@@ -9,6 +9,8 @@ import { useProxyStatus, useSettings } from "@/hooks/useSettings";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 import { useVirtualModels } from "@/hooks/useVirtualModels";
 import { isAnthropicPassthrough } from "@/lib/authTypes";
+import { slotNow, slotNowText } from "@/lib/slotNow";
+import { useHostClock } from "@/hooks/useHostClock";
 import { MODE_LABEL_KEY, VM_ORDER, jevModelOf, vmNameToSlot } from "@/lib/virtualModels";
 import { useT } from "@/i18n";
 import { API_ROUTES, CLIENT_ALIASES } from "@/lib/liveRouting";
@@ -183,6 +185,7 @@ function CopyField({
 
 function MappingSection() {
   const { t } = useT();
+  const clock = useHostClock();
   const navigate = useNavigate();
   const vms = useVirtualModels();
   const subs = useSubscriptions();
@@ -280,6 +283,8 @@ function MappingSection() {
                       if (!sub) return null;
                       // fallback 行三态: 兜底槽值 / 透传 / 翻译类未配槽会被跳过
                       const fallbackModel = sub.model_slots.fallback?.trim() ?? "";
+                      // 四槽位显示宿主机此刻的生效模型 (分时段规则)
+                      const slotView = slot !== null ? slotNow(sub, slot, clock) : null;
                       const real =
                         vm.name === "model-jev"
                           ? jevModelOf(sub) ?? t("sortableSub.passthrough")
@@ -288,15 +293,18 @@ function MappingSection() {
                             (isAnthropicPassthrough(sub.auth_type)
                               ? t("sortableSub.passthrough")
                               : t("sortableSub.fallbackSkipped"))
-                          : sub.model_slots[slot];
+                          : slotView
+                          ? slotNowText(slotView, t)
+                          : "";
                       return (
                         <span
-                          className={sub.state === "healthy" ? "lrc-vm-real" : "lrc-vm-real err"}
+                          className={`lrc-vm-real${sub.state === "healthy" ? "" : " err"}${slotView && slotView.model === null ? " off" : ""}`}
                           key={sid}
                           title={`${sub.display_name} · ${real}`}
                         >
                           <ProviderLogo iconId={sub.provider_icon} size={15} iconSize={10} />
                           {real}
+                          {slotView?.scheduled && <span className="slot-now-mark">{t("schedule.now.scheduled")}</span>}
                         </span>
                       );
                     })}

@@ -7,6 +7,7 @@ icon: moonshot
 category: first_party
 description:
   zh: "Moonshot AI 官方 Anthropic 兼容端点"
+  zh-Hant: "Moonshot AI 官方 Anthropic 相容端點"
   en: "Official Moonshot AI Anthropic-compatible endpoint"
   ja: "Moonshot AI 公式の Anthropic 互換エンドポイント"
 homepage: "https://www.moonshot.cn"
@@ -19,10 +20,12 @@ endpoints:
   - id: cn_endpoint_subscription
     label:
       zh: "国内版 · Coding Plan 订阅"
+      zh-Hant: "中國版 · Coding Plan 訂閱"
       en: "China · Coding Plan subscription"
       ja: "中国版 · Coding Plan サブスクリプション"
     description:
       zh: "Moonshot kimi Coding Plan 订阅"
+      zh-Hant: "Moonshot kimi Coding Plan 訂閱"
       en: "Moonshot Kimi Coding Plan subscription"
       ja: "Moonshot Kimi Coding Plan サブスクリプション"
     base_url: "https://api.kimi.com/coding"
@@ -33,10 +36,12 @@ endpoints:
   - id: cn_endpoint
     label:
       zh: "国内版 · 按量付费 API"
+      zh-Hant: "中國版 · 按量計費 API"
       en: "China · Pay-as-you-go API"
       ja: "中国版 · 従量課金 API"
     description:
       zh: "Moonshot 国内 Anthropic 兼容端点"
+      zh-Hant: "Moonshot 中國 Anthropic 相容端點"
       en: "Moonshot China Anthropic-compatible endpoint"
       ja: "Moonshot 中国版の Anthropic 互換エンドポイント"
     base_url: "https://api.moonshot.cn/anthropic"
@@ -47,10 +52,12 @@ endpoints:
   - id: global_endpoint
     label:
       zh: "国际版 · 按量付费 API"
+      zh-Hant: "國際版 · 按量計費 API"
       en: "International · Pay-as-you-go API"
       ja: "国際版 · 従量課金 API"
     description:
       zh: "Moonshot 国际 Anthropic 兼容端点"
+      zh-Hant: "Moonshot 國際 Anthropic 相容端點"
       en: "Moonshot international Anthropic-compatible endpoint"
       ja: "Moonshot 国際版の Anthropic 互換エンドポイント"
     base_url: "https://api.moonshot.ai/anthropic"

@@ -78,13 +78,13 @@ updateCargoLock("src-tauri/Cargo.lock", "cc-router");
 updateCargoLock("src-tauri/Cargo.lock", "cc-router-tui");
 scaffoldReleaseNotes();
 console.log("完成。建议接下来：");
-console.log(`  编辑 release-notes/${version}/zh.md (en.md / ja.md 可选)`);
+console.log(`  编辑 release-notes/${version}/zh.md (zh-Hant.md / en.md / ja.md 可选)`);
 console.log(`  git add -u && git add release-notes/${version}`);
 console.log(`  git commit -m "Bump version to ${version}"`);
 console.log(`  git tag v${version}`);
 console.log(`  git push && git push --tags`);
 
-// 发版说明骨架: 只在目录不存在时生成; 只写 zh.md, 不生成 en / ja 的空文件
+// 发版说明骨架: 只在目录不存在时生成; 只写 zh.md, 不生成其他语言的空文件
 // (空文件会被当成「已翻译」)。骨架只有分节标题, 会被 release-body --check (CI 第一个 job) 拒绝;
 // 其余格式错误 (如空分节) 由 build.rs 用 app 同一个解析器在 release 构建时报错。
 function scaffoldReleaseNotes() {

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/Spinner";
 import { api } from "@/api/tauri";
 import { useT, type TFunction } from "@/i18n";
@@ -46,7 +45,11 @@ const SEVERITY_META: Record<BalanceSeverity, SeverityMeta> = {
   },
 };
 
-export function SubscriptionBalanceCard({ subscription, onChanged }: Props) {
+/**
+ * 余额: 放在订阅编辑页「基本信息」卡片的右侧栏 (不再单独成卡)。
+ * provider yaml 没声明余额查询时不渲染。
+ */
+export function SubscriptionBalancePanel({ subscription, onChanged }: Props) {
   const { t } = useT();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,20 +99,20 @@ export function SubscriptionBalanceCard({ subscription, onChanged }: Props) {
   const accountUnavailable = snapshot?.is_available === false;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
+    <section className="balance-panel" aria-label={t("subscriptionBalance.title")}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 text-sm font-medium">
           <Wallet className="h-4 w-4" />
           {t("subscriptionBalance.title")}
-        </CardTitle>
+        </h3>
         <Button variant="outline" size="sm" onClick={doRefresh} disabled={loading}>
           {loading ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
           {loading
             ? t("subscriptionBalance.refreshing")
             : t("subscriptionBalance.refresh")}
         </Button>
-      </CardHeader>
-      <CardContent className="space-y-2">
+      </div>
+      <div className="space-y-2">
         {!snapshot && !error && !loading && (
           <div className="text-xs text-muted-foreground">
             {t("subscriptionBalance.neverFetched")}
@@ -144,8 +147,8 @@ export function SubscriptionBalanceCard({ subscription, onChanged }: Props) {
             {fmtRelativeTime(cache.fetched_at, t)}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 

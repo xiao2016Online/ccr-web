@@ -118,6 +118,7 @@ use crate::commands::virtual_models::UpdateVirtualModelInput;
 use crate::settings::model::SettingsPatch;
 use crate::subscription::model::KiroDisguise;
 use crate::subscription::quota::TokenQuotas;
+use crate::subscription::schedule::SlotSchedules;
 
 /// 网页 / TUI 通道上被拒绝的 command 的统一回复。
 const DESKTOP_ONLY: &str = "此操作只能在桌面 app 里执行";
@@ -139,6 +140,8 @@ web_commands! {
     probe_custom_models(input: ProbeCustomModelsInput) => commands::subscriptions::probe_custom_models(st, args.input).await,
     refresh_subscription_balance(id: String) => commands::subscriptions::refresh_subscription_balance(st, args.id).await,
     update_token_quotas(id: String, quotas: TokenQuotas) => commands::subscriptions::update_token_quotas(st, args.id, args.quotas).await,
+    update_slot_schedules(id: String, schedules: SlotSchedules) => commands::subscriptions::update_slot_schedules(st, args.id, args.schedules).await,
+    get_host_clock() => commands::subscriptions::get_host_clock().await,
     reset_total_quota_usage(id: String) => commands::subscriptions::reset_total_quota_usage(st, args.id).await,
     // ChatGPT OAuth
     start_chatgpt_device_flow() => commands::oauth::start_chatgpt_device_flow(st).await,

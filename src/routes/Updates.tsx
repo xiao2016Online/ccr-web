@@ -11,6 +11,7 @@ import { useSearchParams } from "react-router";
 import { version as VERSION } from "../../package.json";
 import { UpdateNotesView } from "@/components/release-notes/UpdateNotesView";
 import { LogoMark } from "@/components/sketch/LogoMark";
+import { Toggle } from "@/components/Toggle";
 import { useUpdater } from "@/hooks/useUpdater";
 import { useSettings, useUpdateSettings } from "@/hooks/useSettings";
 import { useT } from "@/i18n";
@@ -51,6 +52,14 @@ export function UpdatesPage() {
     } catch (e) {
       console.warn("[updates] change source failed", e);
     }
+  }
+
+  // 与设置页「自动检查更新」是同一份 settings.auto_check_updates, 同样不留本地副本
+  const autoCheck = settings.data?.auto_check_updates ?? true;
+  function changeAutoCheck(next: boolean) {
+    updateMut.mutateAsync({ auto_check_updates: next }).catch((e) => {
+      console.warn("[updates] change auto check failed", e);
+    });
   }
 
   const checking = status === "checking";
@@ -102,6 +111,17 @@ export function UpdatesPage() {
               </button>
               </div>
             </div>
+          </div>
+          <div className="setting-row">
+            <div className="label-col">
+              {t("settings.update.autoCheck.label")}
+              <div className="desc">{t("settings.update.autoCheck.desc")}</div>
+            </div>
+            <Toggle
+              checked={autoCheck}
+              onChange={changeAutoCheck}
+              aria-label={t("settings.update.autoCheck.label")}
+            />
           </div>
           <div className="setting-row">
             <div className="label-col">{t("updates.row.check")}</div>

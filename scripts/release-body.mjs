@@ -44,7 +44,9 @@ if (check) {
 const metaRaw = read("meta.json");
 const meta = metaRaw ? JSON.parse(metaRaw) : {};
 const blocks = [`# ${meta.codename ? `v${version} · ${meta.codename}` : `v${version}`}`];
-for (const [file, label] of [["zh.md", "中文"], ["en.md", "English"], ["ja.md", "日本語"]]) {
+// 简中段的标签保持「中文」: 6.4 及以前的 app 解析正文时只认「中文 / English / 日本語」, 改名会让它们的
+// 简中用户落到英文段。新版解析器 (updateNotesMarkdown.ts) 同时认「中文」与「简体中文」。
+for (const [file, label] of [["zh.md", "中文"], ["zh-Hant.md", "繁體中文"], ["en.md", "English"], ["ja.md", "日本語"]]) {
   const text = file === "zh.md" ? zh : read(file);
   if (text) blocks.push(`**${label}**\n\n${text}`);
 }

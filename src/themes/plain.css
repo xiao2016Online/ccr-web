@@ -32,15 +32,13 @@
     -apple-system, BlinkMacSystemFont,
     "Segoe UI Variable Text", "Segoe UI",
     Inter, Roboto, "Helvetica Neue", Arial,
-    "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei UI", "Microsoft YaHei",
-    "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei",
+    var(--cjk-sans),
     system-ui, sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo,
     "Cascadia Mono", "Cascadia Code", Consolas,
     "DejaVu Sans Mono", "Liberation Mono",
-    "Source Han Mono SC", monospace;
+    var(--cjk-mono), monospace;
   --font-display: var(--font-sans);
   --font-hand:    var(--font-sans);
 }
@@ -335,7 +333,7 @@
 }
 :where([data-art~="plain"]) .table td { border-bottom: 1px solid var(--line); }
 
-/* === Slot cards / endpoints === */
+/* === Slot cards === */
 :where([data-art~="plain"]) .slot-grid { gap: var(--gap-md); }
 :where([data-art~="plain"]) .slot-card {
   border: 1px solid var(--line);
@@ -350,47 +348,7 @@
 }
 :where([data-art~="plain"]) .slot-head.compact .slot-name { font-size: 14px; }
 :where([data-art~="plain"]) .slot-head.compact .slot-purpose { font-size: 11.5px; }
-:where([data-art~="plain"]) .endpoint {
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-  transition: none;
-}
-:where([data-art~="plain"]) .endpoint:nth-child(even) { border-radius: var(--r-sm); }
-:where([data-art~="plain"]) .endpoint:hover { border-color: var(--line); }
-:where([data-art~="plain"]) .endpoint .grip { color: var(--ink-5); }
-:where([data-art~="plain"]) .endpoint .priority {
-  width: 18px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: inherit;
-  color: var(--ink-4);
-  background: var(--surface-3);
-  border-radius: 4px;
-}
 :where([data-art~="plain"]) .endpoint-status { width: 6px; height: 6px; border-radius: 50%; }
-:where([data-art~="plain"]) .endpoint .remove { border-radius: 4px; }
-:where([data-art~="plain"]) .endpoint .remove:hover { color: var(--err); background: var(--err-bg); }
-:where([data-art~="plain"]) .endpoint-list { gap: 5px; }
-:where([data-art~="plain"]) .endpoint.compact { height: 30px; }
-:where([data-art~="plain"]) .endpoint.compact .priority { width: 16px; height: 16px; font-size: 9.5px; }
-:where([data-art~="plain"]) .add-endpoint {
-  border: 1px dashed var(--line-2);
-  border-radius: var(--r-sm);
-  transition: none;
-}
-:where([data-art~="plain"]) .add-endpoint:hover:not(:disabled) {
-  border-color: var(--ink-4);
-  background: var(--surface-2);
-  transform: none;
-}
-:where([data-art~="plain"]) .add-endpoint.compact { height: 26px; }
-:where([data-art~="plain"]) .endpoint-empty {
-  border: 1px dashed var(--line-2);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-}
 
 /* === Logs / Statistics === */
 :where([data-art~="plain"]) .stat {
@@ -463,10 +421,6 @@
   border-radius: var(--r-md);
 }
 :where([data-art~="plain"]) .app-mark {
-  border-radius: 14px;
-  box-shadow: var(--shadow-sm);
-}
-:where([data-art~="plain"]) .onboarding-disclaimer-mark {
   border-radius: 14px;
   box-shadow: var(--shadow-sm);
 }
@@ -566,6 +520,30 @@
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
 }
+
+/* === 引导窗口 === */
+:where([data-art~="plain"]) .ob { border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); }
+:where([data-art~="plain"]) .ob-kicker {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+:where([data-art~="plain"]) .ob-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+:where([data-art~="plain"]) .ob-title::after { display: none; }
+:where([data-art~="plain"]) .ob-step-dot { font-family: var(--font-sans); font-size: 12px; }
+:where([data-art~="plain"]) .ob-counter { font-family: var(--font-mono); font-size: 12px; }
+:where([data-art~="plain"]) .ob-tip,
+:where([data-art~="plain"]) .ob-option,
+:where([data-art~="plain"]) .ob-agree,
+:where([data-art~="plain"]) .ob-resume,
+:where([data-art~="plain"]) .ob-chip { border-radius: var(--r-md); }
+:where([data-art~="plain"]) .ob-tip { border-style: solid; border-color: var(--line); }
+:where([data-art~="plain"]) .ob-option.selected,
+:where([data-art~="plain"]) .ob-seg-item.selected,
+:where([data-art~="plain"]) .ob-chip.on,
+:where([data-art~="plain"]) .ob-resume { border-width: 1.5px; box-shadow: none; }
 
 /* === 更新内容弹窗 === */
 :where([data-art~="plain"]) .rn {

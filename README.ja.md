@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <strong>日本語</strong>
+  <a href="README.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.en.md">English</a> · <strong>日本語</strong>
 </p>
 
 <p align="center">
@@ -67,7 +67,7 @@
 - **出口は 3 プロトコル、全サブスクを一括ディスパッチ** —— 24 社のプロバイダプリセットを内蔵（DeepSeek・Qwen・Kimi・MiMo・MiniMax・GLM・Claude・OpenAI・Gemini など）。Anthropic / OpenAI / Gemini 互換のエンドポイントなら何でも追加可能
 - **手持ちのトークンをすべて集約** —— 順次 / ラウンドロビン / セッション親和のディスパッチ、自動切替とフェイルオーバー
 - **利用レシート** —— トークン使用量を「スーパーのレシート」風の画像にワンクリックで書き出し。共有にも記録にも便利
-- **3 言語完全翻訳** —— 简体中文 / English / 日本語、システム言語追従または設定画面で手動切替
+- **4 言語完全翻訳** —— 简体中文 / 繁體中文 / English / 日本語、システム言語追従または設定画面で手動切替
 - **デスクトップ / Web / ターミナルの 3 つの UI** —— デスクトップ GUI に加えて、デスクトップと同じ管理画面をブラウザで開ける [Web UI](#web-uiオプションデフォルト無効) や、コマンドラインからサブスクリプションの管理・リアルタイムルーティング・リクエストログの確認ができる[ターミナル UI（TUI）](#ターミナル-uiオプションデフォルト無効) も使えます
 - **仮想モデルのエイリアス対応** —— fable / opus / sonnet / haiku の各スロットが複数の命名を識別。opus を例にすると `model-opus` / `claude-opus-4-7` / `anthropic/model-opus` / `anthropic/claude-opus-4-7` がすべて同じ仮想モデルにルーティングされ、ツール側の命名規約に左右されません
 - **ローカル HTTPS** —— ワンクリックで自己署名 CA とサーバー証明書を生成し、HTTPS しか受け付けないクライアントからも cc-router を呼び出せます。詳細は[設定ガイド](https://ccrouter.app/docs/claude-desktop-integration/)を参照

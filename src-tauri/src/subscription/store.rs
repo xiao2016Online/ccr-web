@@ -18,6 +18,7 @@ use crate::subscription::model::{
     SubscriptionRow, SubscriptionRuntime,
 };
 use crate::subscription::quota::{QuotaBucket, QuotaPeriod, QuotaUsage, TokenQuotas, ALL_PERIODS};
+use crate::subscription::schedule::SlotSchedules;
 
 /// 启动时从 DB 加载全部订阅，并初始化运行时状态。
 ///
@@ -38,7 +39,7 @@ pub async fn load_runtime(
                 model_discovery, balance_discovery,
                 provider_display_name, provider_icon, is_user_defined,
                 auth_type, oauth_metadata, slot_efforts, token_quotas, endpoint_protocol,
-                url_params, systemone_wire
+                url_params, systemone_wire, slot_schedules
          FROM subscriptions",
     )
     .fetch_all(pool)
@@ -150,6 +151,16 @@ fn row_to_row(row: &sqlx::sqlite::SqliteRow) -> AppResult<SubscriptionRow> {
             TokenQuotas::default()
         }
     };
+    // slot_schedules 列在 migration 025 加, DEFAULT '{}' (= 没有时段规则). 同 token_quotas
+    // 走宽容降级: 解析失败只是规则丢失回退到各槽默认模型, 不该让整条订阅加载失败。
+    let slot_schedules_json: String = row.try_get("slot_schedules")?;
+    let slot_schedules: SlotSchedules = match serde_json::from_str::<SlotSchedules>(&slot_schedules_json) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(error = %e, raw = %slot_schedules_json, "slot_schedules JSON 解析失败, 该订阅视为没有时段规则");
+            SlotSchedules::default()
+        }
+    };
     Ok(SubscriptionRow {
         id,
         provider_id: row.try_get("provider_id")?,
@@ -167,6 +178,7 @@ fn row_to_row(row: &sqlx::sqlite::SqliteRow) -> AppResult<SubscriptionRow> {
             jev: row.try_get("model_slot_jev")?,
         },
         slot_efforts,
+        slot_schedules,
         token_quotas,
         enabled: {
             let v: i64 = row.try_get("enabled")?;
@@ -227,6 +239,7 @@ pub async fn insert_on(conn: &mut SqliteConnection, sub: &SubscriptionRow) -> Ap
     let oauth_json = serde_json::to_string(&sub.oauth_metadata)?;
     let slot_efforts_json = serde_json::to_string(&sub.slot_efforts)?;
     let token_quotas_json = serde_json::to_string(&sub.token_quotas)?;
+    let slot_schedules_json = serde_json::to_string(&sub.slot_schedules)?;
     let url_params_json = serde_json::to_string(&sub.url_params)?;
     sqlx::query(
         "INSERT INTO subscriptions (id, provider_id, endpoint_id, display_name, api_key,
@@ -238,13 +251,13 @@ pub async fn insert_on(conn: &mut SqliteConnection, sub: &SubscriptionRow) -> Ap
             model_discovery, balance_discovery,
             provider_display_name, provider_icon, is_user_defined,
             auth_type, oauth_metadata, slot_efforts, token_quotas, endpoint_protocol,
-            url_params, systemone_wire)
+            url_params, systemone_wire, slot_schedules)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                  ?, ?, ?, ?,
                  ?, ?, ?, ?, ?,
                  ?, ?, ?,
                  ?, ?, ?, ?, ?,
-                 ?, ?)",
+                 ?, ?, ?)",
     )
     .bind(sub.id.to_string())
     .bind(&sub.provider_id)
@@ -281,6 +294,7 @@ pub async fn insert_on(conn: &mut SqliteConnection, sub: &SubscriptionRow) -> Ap
     .bind(sub.endpoint_protocol.as_str())
     .bind(url_params_json)
     .bind(sub.systemone_wire.as_str())
+    .bind(slot_schedules_json)
     .execute(&mut *conn)
     .await?;
     Ok(())
@@ -324,6 +338,7 @@ pub async fn update_row(pool: &SqlitePool, sub: &SubscriptionRow) -> AppResult<(
     let balance_discovery_json = opt_to_json(sub.balance_discovery.as_ref())?;
     let slot_efforts_json = serde_json::to_string(&sub.slot_efforts)?;
     let token_quotas_json = serde_json::to_string(&sub.token_quotas)?;
+    let slot_schedules_json = serde_json::to_string(&sub.slot_schedules)?;
     let url_params_json = serde_json::to_string(&sub.url_params)?;
     sqlx::query(
         "UPDATE subscriptions SET
@@ -337,7 +352,8 @@ pub async fn update_row(pool: &SqlitePool, sub: &SubscriptionRow) -> AppResult<(
             required_headers = ?, forward_headers = ?, forward_client_headers = ?,
             model_discovery = ?, balance_discovery = ?,
             provider_display_name = ?, provider_icon = ?, is_user_defined = ?,
-            url_params = ?, systemone_wire = ?
+            url_params = ?, systemone_wire = ?,
+            slot_schedules = ?
          WHERE id = ?",
     )
     .bind(&sub.endpoint_id)
@@ -368,6 +384,7 @@ pub async fn update_row(pool: &SqlitePool, sub: &SubscriptionRow) -> AppResult<(
     .bind(sub.is_user_defined as i64)
     .bind(url_params_json)
     .bind(sub.systemone_wire.as_str())
+    .bind(slot_schedules_json)
     .bind(sub.id.to_string())
     .execute(pool)
     .await?;
@@ -697,6 +714,35 @@ mod tests {
         let loaded = load_runtime(&pool).await.expect("load");
         let g = loaded.get(&row.id).unwrap().read().await;
         assert_eq!(g.row.slot_efforts.get(SubscriptionSlot::Opus), None);
+    }
+
+    #[tokio::test]
+    async fn slot_schedules_roundtrip_and_corrupt_json_degrades() {
+        use crate::subscription::schedule::ScheduleRule;
+        let pool = migrated_pool().await;
+        let mut row = SubscriptionRow::test_fixture("qoder", "default");
+        row.slot_schedules.opus = vec![
+            ScheduleRule { days: vec![1, 2, 3], start: "22:00".into(), end: "08:00".into(), model: "night".into(), effort: None },
+            ScheduleRule { days: vec![6, 7], start: "00:00".into(), end: "24:00".into(), model: "weekend".into(), effort: None },
+        ];
+        insert(&pool, &row).await.expect("insert");
+        let loaded = load_runtime(&pool).await.expect("load");
+        assert_eq!(loaded.get(&row.id).unwrap().read().await.row.slot_schedules, row.slot_schedules);
+
+        // update_row writes the column too
+        let mut updated = row.clone();
+        updated.slot_schedules.opus.truncate(1);
+        update_row(&pool, &updated).await.expect("update");
+        let loaded = load_runtime(&pool).await.expect("load");
+        assert_eq!(loaded.get(&row.id).unwrap().read().await.row.slot_schedules, updated.slot_schedules);
+
+        sqlx::query("UPDATE subscriptions SET slot_schedules = 'not json'")
+            .execute(&pool)
+            .await
+            .expect("corrupt");
+        let loaded = load_runtime(&pool).await.expect("load");
+        let rt = loaded.get(&row.id).expect("订阅不应被整条跳过");
+        assert!(rt.read().await.row.slot_schedules.is_empty());
     }
 
     /// 坏 JSON 走宽容降级: 订阅仍然加载得出来 (全 auto), 而不是从列表里消失。

@@ -116,7 +116,7 @@
       </div>
       <div id="maxTokensWrap">
         <label id="maxTokensLabel">max_tokens</label>
-        <input id="maxTokens" type="number" value="1024">
+        <input id="maxTokens" type="number" min="1" placeholder="留空 = 不发送, 不限制">
       </div>
     </div>
 
@@ -546,11 +546,16 @@ function buildAnthropicMulti(msgs) {
   return body;
 }
 
+// max_tokens 输入框: 留空或非正整数 → 返回 null, 调用方不发送该字段
+function maxTokensValue() {
+  const n = parseInt($('maxTokens').value, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function anthropicCommon() {
-  const body = {
-    model: currentModel(),
-    max_tokens: parseInt($('maxTokens').value, 10) || 1024,
-  };
+  const body = { model: currentModel() };
+  const maxTokens = maxTokensValue();
+  if (maxTokens !== null) body.max_tokens = maxTokens;
   const sys = $('system').value.trim();
   if (sys) body.system = sys;
   if ($('stream').checked) body.stream = true;
@@ -578,10 +583,9 @@ function buildResponsesMulti(msgs) {
 }
 
 function responsesCommon() {
-  const body = {
-    model: currentModel(),
-    max_output_tokens: parseInt($('maxTokens').value, 10) || 1024,
-  };
+  const body = { model: currentModel() };
+  const maxTokens = maxTokensValue();
+  if (maxTokens !== null) body.max_output_tokens = maxTokens;
   const instr = $('system').value.trim();
   if (instr) body.instructions = instr;
   if ($('stream').checked) body.stream = true;

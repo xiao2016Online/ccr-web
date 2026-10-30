@@ -1,7 +1,12 @@
-import type { ModelSlots, SlotEffort } from "@/types";
+import type { FourSlot, ModelSlots, SlotEffort } from "@/types";
 
 /** 四个 model slot 的 key, 顺序即 UI 展示顺序 (最强在前). */
 export const MODEL_SLOT_KEYS = ["fable", "opus", "sonnet", "haiku"] as const;
+
+/** 订阅编辑页 `?slot=` 参数 → 初始标签; 不是四槽之一 (含大小写不符) 一律忽略。 */
+export function parseSlotParam(v: string | null): FourSlot | null {
+  return (MODEL_SLOT_KEYS as readonly string[]).includes(v ?? "") ? (v as FourSlot) : null;
+}
 
 /** 槽位 effort 可选档位, 顺序即下拉展示顺序 (弱→强).
  *  "auto" 不在此列 —— 它是下拉的 sentinel 空值 (value=""), 对应后端的 None. */

@@ -4,6 +4,7 @@ icon: google
 category: first_party
 description:
   zh: "Google Gemini 新 Interactions API (/v1beta/interactions), 通过协议翻译适配 Anthropic Messages 接口"
+  zh-Hant: "Google Gemini 新 Interactions API (/v1beta/interactions), 透過協議翻譯適配 Anthropic Messages 介面"
   en: "Google Gemini's new Interactions API (/v1beta/interactions), adapted to the Anthropic Messages API via protocol translation"
   ja: "Google Gemini の新しい Interactions API（/v1beta/interactions）。プロトコル変換で Anthropic Messages API に対応"
 homepage: "https://aistudio.google.com"
@@ -13,6 +14,7 @@ api_key_url: "https://aistudio.google.com/app/apikey"
 compatibility: partial
 compatibility_notes:
   zh: "Interactions API 较新 (部分模型仍 preview)。cc-router 内部做 Anthropic Messages ↔ Interactions step_list 翻译, 强制走 stream + alt=sse, 客户端非流式时由 cc-router 收齐再吐 JSON。model 在请求 body 里 (不嵌 URL), 与旧 generateContent 的 Google AI Studio provider 各走独立翻译路径。工具结果回传 (function_result) 的精确形态以实测为准。"
+  zh-Hant: "Interactions API 較新 (部分模型仍 preview)。cc-router 內部做 Anthropic Messages ↔ Interactions step_list 翻譯, 強制走 stream + alt=sse, 客戶端非串流時由 cc-router 收齊再吐 JSON。model 在請求 body 裡 (不嵌 URL), 與舊 generateContent 的 Google AI Studio provider 各走獨立翻譯路徑。工具結果回傳 (function_result) 的精確形態以實測為準。"
   en: "The Interactions API is fairly new (some models are still in preview). cc-router translates Anthropic Messages ↔ Interactions step_list internally and always uses stream + alt=sse; for non-streaming clients, cc-router collects the stream and returns JSON. The model goes in the request body (not the URL), and this provider uses a translation path separate from the older generateContent-based Google AI Studio provider. The exact shape of returned tool results (function_result) follows observed behavior."
   ja: "Interactions API は比較的新しく、一部のモデルはまだ preview です。cc-router が内部で Anthropic Messages ↔ Interactions step_list を変換し、常に stream + alt=sse を使います。クライアントが非ストリーミングの場合は cc-router がまとめて JSON で返します。model はリクエスト body に入り（URL には入りません）、旧 generateContent 版の Google AI Studio プロバイダとは別の変換経路を使います。ツール結果（function_result）の返却形式は実測に基づいています。"
 
@@ -21,6 +23,7 @@ endpoints:
     label: "Google AI Studio · Interactions"
     description:
       zh: "generativelanguage.googleapis.com /v1beta/interactions, 使用 AI Studio 控制台生成的 API Key. model 在 body 里, 由 cc-router 翻译层填入订阅 slot 的真实模型名。"
+      zh-Hant: "generativelanguage.googleapis.com /v1beta/interactions, 使用 AI Studio 控制台生成的 API Key. model 在 body 裡, 由 cc-router 翻譯層填入訂閱 slot 的真實模型名。"
       en: "generativelanguage.googleapis.com /v1beta/interactions, using an API key created in the AI Studio console. The model goes in the body; cc-router's translation layer fills in the subscription slot's actual model name."
       ja: "generativelanguage.googleapis.com /v1beta/interactions。AI Studio コンソールで発行した API Key を使用します。model は body に入り、cc-router の変換層がサブスクリプションのスロットの実際のモデル名を設定します。"
     base_url: "https://generativelanguage.googleapis.com"

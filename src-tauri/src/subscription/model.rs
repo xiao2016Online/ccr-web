@@ -10,6 +10,7 @@ use crate::provider::model::{
 };
 use crate::provider::Provider;
 use crate::subscription::quota::{QuotaPeriod, QuotaUsage, TokenQuotas};
+use crate::subscription::schedule::{effective_model, SlotSchedules, WallClock};
 use crate::virtual_model::model::SubscriptionSlot;
 
 /// OAuth 凭据元数据, 持久化为 `subscriptions.oauth_metadata` 列 (JSON 字符串).
@@ -253,6 +254,8 @@ pub struct SubscriptionRow {
     pub model_slots: ModelSlots,
     /// 每槽位 reasoning effort 覆盖. 字段缺失 = auto (透传客户端值).
     pub slot_efforts: SlotEfforts,
+    /// 每槽位分时段规则 (migration 025). 空 = 全天用 `model_slots` 里的默认模型.
+    pub slot_schedules: SlotSchedules,
     /// 用户设的 token 限额 (cc-router 侧安全阀). 字段缺失 = 该周期不限.
     pub token_quotas: TokenQuotas,
     pub enabled: bool,
@@ -289,6 +292,24 @@ pub struct SubscriptionRow {
 }
 
 impl SubscriptionRow {
+    /// Model the slot resolves to at the given local wall-clock time: first matching schedule
+    /// rule, else the slot default. `None` when the result is blank.
+    pub fn slot_model_at(&self, slot: SubscriptionSlot, at: WallClock) -> Option<&str> {
+        effective_model(self.model_slots.get(slot), self.slot_schedules.get(slot), at)
+    }
+
+    /// Forced reasoning effort for `slot` at `at`: the winning time rule's own effort if it has
+    /// one, otherwise the slot-level `slot_efforts` value (also when the default model wins).
+    pub fn slot_effort_at(&self, slot: SubscriptionSlot, at: WallClock) -> Option<&str> {
+        crate::subscription::schedule::effective_choice(
+            self.model_slots.get(slot),
+            self.slot_schedules.get(slot),
+            at,
+        )
+        .and_then(|(_, e)| e)
+        .or_else(|| self.slot_efforts.get(slot))
+    }
+
     pub fn messages_url(&self) -> String {
         join_base_path(&self.base_url, &self.messages_path)
     }
@@ -478,6 +499,27 @@ pub struct QuotaUsageDto {
     pub exceeded: bool,
 }
 
+/// Per-slot model in effect right now (None = blank). Always serialized with all four keys.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SlotModelsNow {
+    pub fable: Option<String>,
+    pub opus: Option<String>,
+    pub sonnet: Option<String>,
+    pub haiku: Option<String>,
+}
+
+impl SlotModelsNow {
+    pub fn of(row: &SubscriptionRow, at: WallClock) -> Self {
+        let at_slot = |s| row.slot_model_at(s, at).map(str::to_string);
+        Self {
+            fable: at_slot(SubscriptionSlot::Fable),
+            opus: at_slot(SubscriptionSlot::Opus),
+            sonnet: at_slot(SubscriptionSlot::Sonnet),
+            haiku: at_slot(SubscriptionSlot::Haiku),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscriptionDto {
     pub id: Uuid,
@@ -489,6 +531,12 @@ pub struct SubscriptionDto {
     /// 刻意不加 `skip_serializing_if`: 前端把它声明为必填, DTO 必须总是带这个 key (可以是 `{}`).
     #[serde(default)]
     pub slot_efforts: SlotEfforts,
+    /// 每槽位分时段规则; 刻意不 skip: 前端声明为必填 (可以是 `{}`).
+    #[serde(default)]
+    pub slot_schedules: SlotSchedules,
+    /// 各槽位此刻实际生效的模型 (按本机本地时间算), 供界面显示「当前生效」.
+    #[serde(default)]
+    pub slot_models_now: SlotModelsNow,
     /// 用户设的 token 限额; 刻意不 skip: 前端声明为必填.
     #[serde(default)]
     pub token_quotas: TokenQuotas,
@@ -607,6 +655,7 @@ impl SubscriptionRow {
                 jev: String::new(),
             },
             slot_efforts: SlotEfforts::default(),
+            slot_schedules: SlotSchedules::default(),
             token_quotas: TokenQuotas::default(),
             enabled: true,
             is_auth_failed: false,
@@ -646,6 +695,8 @@ impl SubscriptionDto {
             display_name: rt.row.display_name.clone(),
             model_slots: rt.row.model_slots.clone(),
             slot_efforts: rt.row.slot_efforts.clone(),
+            slot_schedules: rt.row.slot_schedules.clone(),
+            slot_models_now: SlotModelsNow::of(&rt.row, WallClock::now()),
             token_quotas: rt.row.token_quotas.clone(),
             quota_usage: {
                 let now = Utc::now();
@@ -921,5 +972,48 @@ mod tests {
         let json = serde_json::to_value(&dto).unwrap();
         assert_eq!(json["endpoint_protocol"], "systemone");
         assert_eq!(json["model_slots"]["jev"], "");
+    }
+
+    fn night_rule() -> crate::subscription::schedule::ScheduleRule {
+        crate::subscription::schedule::ScheduleRule {
+            days: vec![1, 2, 3, 4, 5, 6, 7],
+            start: "18:00".into(),
+            end: "08:00".into(),
+            model: "b".into(),
+            effort: None,
+        }
+    }
+
+    #[test]
+    fn slot_model_at_follows_the_schedule() {
+        let mut row = SubscriptionRow::test_fixture("p", "e");
+        row.slot_schedules.opus = vec![night_rule()];
+        // test_fixture opus default is "a"
+        assert_eq!(row.slot_model_at(SubscriptionSlot::Opus, WallClock { weekday: 3, minute: 20 * 60 }), Some("b"));
+        assert_eq!(row.slot_model_at(SubscriptionSlot::Opus, WallClock { weekday: 3, minute: 12 * 60 }), Some("a"));
+        // other slots have no rules and keep their defaults
+        assert_eq!(row.slot_model_at(SubscriptionSlot::Sonnet, WallClock { weekday: 3, minute: 20 * 60 }), Some("b"));
+        assert_eq!(row.slot_model_at(SubscriptionSlot::Haiku, WallClock { weekday: 3, minute: 20 * 60 }), Some("c"));
+    }
+
+    #[test]
+    fn dto_carries_schedules_and_current_models() {
+        let mut row = SubscriptionRow::test_fixture("p", "e");
+        row.slot_schedules.opus = vec![night_rule()];
+        row.model_slots.haiku = String::new();
+        let rt = SubscriptionRuntime::from_row(row);
+        let dto = SubscriptionDto::from_runtime(&rt, vec![], &HashMap::new());
+        let v = serde_json::to_value(&dto).unwrap();
+        assert_eq!(v["slot_schedules"]["opus"][0]["model"], "b");
+        let now = &v["slot_models_now"];
+        for k in ["fable", "opus", "sonnet", "haiku"] {
+            assert!(now.get(k).is_some(), "slot_models_now.{k} must always be serialized");
+        }
+        assert!(now["haiku"].is_null(), "blank default and no rule -> null");
+        assert_eq!(now["fable"], "d");
+        // No schedule rules -> the key is still present (frontend declares it required).
+        let rt = SubscriptionRuntime::from_row(SubscriptionRow::test_fixture("p", "e"));
+        let v = serde_json::to_value(SubscriptionDto::from_runtime(&rt, vec![], &HashMap::new())).unwrap();
+        assert_eq!(v["slot_schedules"], serde_json::json!({}));
     }
 }

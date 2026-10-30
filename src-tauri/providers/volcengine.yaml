@@ -16,12 +16,14 @@
 id: volcengine
 display_name:
   zh: "火山方舟"
+  zh-Hant: "火山方舟"
   en: "Volcengine Ark"
   ja: "Volcengine Ark"
 icon: volcengine
 category: first_party
 description:
   zh: "字节跳动火山引擎方舟，聚合豆包自研 + GLM/MiniMax/DeepSeek/Kimi 多家模型"
+  zh-Hant: "字節跳動火山引擎方舟，聚合豆包自研 + GLM/MiniMax/DeepSeek/Kimi 多家模型"
   en: "ByteDance Volcengine Ark, aggregating in-house Doubao models plus GLM / MiniMax / DeepSeek / Kimi and more"
   ja: "ByteDance の Volcengine Ark。自社の Doubao に加え GLM / MiniMax / DeepSeek / Kimi など複数社のモデルを集約"
 homepage: "https://www.volcengine.com/product/ark"
@@ -37,6 +39,13 @@ compatibility_notes:
        - 按量付费: /api/compatible（按 token 计费）
     3. 两个端点共享同一 ARK API Key，Coding Plan 模式下 minimax-latest / ark-code-latest
        等"latest 别名"会自动指向当前最新版本。
+  zh-Hant: |
+    1. 火山方舟未提供 Anthropic 風格的 /v1/models 列表介面，需手動輸入模型 ID。
+    2. Coding Plan 與按量計費使用不同 base path：
+       - Coding Plan: /api/coding（方案額度僅在此端點扣減）
+       - 按量計費: /api/compatible（按 token 計費）
+    3. 兩個端點共享同一 ARK API Key，Coding Plan 模式下 minimax-latest / ark-code-latest
+       等"latest 別名"會自動指向當前最新版本。
   en: |
     1. Volcengine Ark has no Anthropic-style /v1/models list endpoint, so enter model IDs manually.
     2. Coding Plan and pay-as-you-go use different base paths:
@@ -56,10 +65,12 @@ endpoints:
   - id: coding_plan
     label:
       zh: "国内版 · Coding Plan 订阅"
+      zh-Hant: "中國版 · Coding Plan 訂閱"
       en: "China · Coding Plan subscription"
       ja: "中国版 · Coding Plan サブスクリプション"
     description:
       zh: "订阅制，套餐额度仅从此端点扣减"
+      zh-Hant: "訂閱制，方案額度僅從此端點扣減"
       en: "Subscription-based; plan quota is only deducted on this endpoint"
       ja: "サブスクリプション制。プランの枠はこのエンドポイントでのみ消費されます"
     base_url: "https://ark.cn-beijing.volces.com/api/coding"
@@ -70,10 +81,12 @@ endpoints:
   - id: agent_plan
     label:
       zh: "国内版 · Agent Plan 订阅"
+      zh-Hant: "中國版 · Agent Plan 訂閱"
       en: "China · Agent Plan subscription"
       ja: "中国版 · Agent Plan サブスクリプション"
     description:
       zh: "订阅制，套餐额度仅从此端点扣减"
+      zh-Hant: "訂閱制，方案額度僅從此端點扣減"
       en: "Subscription-based; plan quota is only deducted on this endpoint"
       ja: "サブスクリプション制。プランの枠はこのエンドポイントでのみ消費されます"
     base_url: "https://ark.cn-beijing.volces.com/api/plan"
@@ -84,10 +97,12 @@ endpoints:
   - id: paygo
     label:
       zh: "国内版 · 按量付费 API"
+      zh-Hant: "中國版 · 按量計費 API"
       en: "China · Pay-as-you-go API"
       ja: "中国版 · 従量課金 API"
     description:
       zh: "按 token 计费，与 Coding Plan 套餐额度独立"
+      zh-Hant: "按 token 計費，與 Coding Plan 方案額度獨立"
       en: "Billed per token, separate from the Coding Plan quota"
       ja: "トークン従量課金。Coding Plan の枠とは別"
     base_url: "https://ark.cn-beijing.volces.com/api/compatible"

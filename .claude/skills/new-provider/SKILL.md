@@ -49,10 +49,11 @@ cc-router 的 Provider 抽象 = 「YAML 描述符」。把一个新厂商接入�
 
 ```yaml
 id: <provider_id>
-display_name: "<厂商展示名>"   # 纯品牌名 (三语相同) 写字符串; 含中文就写成下面 description 的三语形式
+display_name: "<厂商展示名>"   # 纯品牌名 (四语相同) 写字符串; 含中文就写成下面 description 的四语形式
 icon: ""  # 没有 lucide brand icon 时留空走 Bot 兜底; 有则填 BRAND_MAP key
 description:
   zh: "<一句话描述>"
+  zh-Hant: "<繁體中文（台灣用語）>"
   en: "<English>"
   ja: "<日本語>"
 homepage: "<主页 URL>"
@@ -63,6 +64,8 @@ compatibility: untested  # 或 partial/verified
 compatibility_notes:
   zh: |
     <需要用户知道的限制：流式 quirks、模型列表问题、特殊计费等>
+  zh-Hant: |
+    <繁體中文>
   en: |
     <English>
   ja: |
@@ -72,10 +75,12 @@ endpoints:
   - id: <endpoint_id>
     label:
       zh: "<UI 显示的人话名称, 如「国内版 · 按量付费 API」>"
+      zh-Hant: "<如 中國版 · 按量計費 API>"
       en: "<如 China · Pay-as-you-go API>"
       ja: "<如 中国版 · 従量課金 API>"
     description:
       zh: "<细节说明>"
+      zh-Hant: "<繁體中文>"
       en: "<English>"
       ja: "<日本語>"
     base_url: "<https://...>"
@@ -120,12 +125,13 @@ endpoints 数量？
 ├─ 2-4 个 → 区分订阅 vs 按量、国内 vs 国际、不同区域集群
 ```
 
-**上屏文字必须三语齐全**（`display_name` / `description` / `compatibility_notes` / 端点 `label` / `description`）：
+**上屏文字必须四语齐全**（`display_name` / `description` / `compatibility_notes` / 端点 `label` / `description`）：
 
-- 两种写法：纯字符串 = 三语相同，只用于 `DeepSeek`、`OpenRouter` 这类纯品牌名；其余写成 `{zh, en, ja}`，少一个键 yaml 就解析失败。界面上**没有回退**，缺翻译不会显示中文兜底。
-- 含中文的字段不许用纯字符串写法，`en` 里不许有中日文、`ja` 不许照抄 `zh` —— `loader.rs::tests::cjk_text_is_translated` 锁住。
-- 用语与已有 yaml 保持一致：国内版 / 国际版 / 全球 → `China` / `International` / `Global`、`中国版` / `国際版` / `グローバル`；按量付费 → `Pay-as-you-go`、`従量課金`；订阅 → `subscription`、`サブスクリプション`；端点 → `endpoint`、`エンドポイント`；官方 → `Official`、`公式`。
-- 中文厂商的英日文名用官方国际名、前面带厂商名（如 `Alibaba Cloud Model Studio`、`Baidu AI Cloud Qianfan`）；日文里品牌名保留英文写法。
+- 两种写法：纯字符串 = 四语相同，只用于 `DeepSeek`、`OpenRouter` 这类纯品牌名；其余写成 `{zh, zh-Hant, en, ja}`，少一个键 yaml 就解析失败。界面上**没有回退**，缺翻译不会显示中文兜底。
+- 含中文的字段不许用纯字符串写法，`en` 里不许有中日文、`ja` 不许照抄 `zh`、`zh-Hant` 里不许有简体专用字（`src/i18n/simplified-only.txt`）—— `loader.rs::tests::cjk_text_is_translated` 锁住。
+- `zh-Hant` 按 `src/i18n/zh-Hant-glossary.md` 用台湾用语；简繁同形的文字（如「月之暗面」）可以与 `zh` 相同。
+- 用语与已有 yaml 保持一致：国内版 / 国际版 / 全球 → `中國版` / `國際版` / `全球`、`China` / `International` / `Global`、`中国版` / `国際版` / `グローバル`；按量付费 → `按量計費`、`Pay-as-you-go`、`従量課金`；订阅 → `訂閱`、`subscription`、`サブスクリプション`；端点 → `端點`、`endpoint`、`エンドポイント`；官方 → `官方`、`Official`、`公式`。
+- 中文厂商的英日文名用官方国际名、前面带厂商名（如 `Alibaba Cloud Model Studio`、`Baidu AI Cloud Qianfan`）；日文里品牌名保留英文写法；繁中用简中名的繁体写法（如「智譜 GLM」「阿里雲百鍊」），不改成英文名。
 - 列表按英文名排序（`list_providers`），不用关心中文名的排序。
 
 **已有 provider 是最好的参考**：写之前先 `Read` 一个最相似的现有 YAML（按 auth + model_discovery 组合匹配），照葫芦画瓢比从模板硬写更可靠。
@@ -165,7 +171,7 @@ const BRAND_MAP: Record<string, BrandIcon> = {
 cd src-tauri && cargo test --lib provider::loader
 ```
 
-通过 = 新 yaml 能被解析、`id` 不与现有 provider 冲突、`default_endpoint` 合法、上屏文字三语齐全。失败信息会直接点名出错的文件和字段。
+通过 = 新 yaml 能被解析、`id` 不与现有 provider 冲突、`default_endpoint` 合法、上屏文字四语齐全。失败信息会直接点名出错的文件和字段。
 
 可选：`pnpm tsc --noEmit` 确认 BRAND_MAP 导入没拼错（Step 3 改动时）。
 

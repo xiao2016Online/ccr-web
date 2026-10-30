@@ -4,6 +4,7 @@ icon: ollama
 category: aggregator
 description:
   zh: "Ollama 本地推理服务（Anthropic 兼容端点 + System One 决策端点）"
+  zh-Hant: "Ollama 本地推理服務（Anthropic 相容端點 + System One 決策端點）"
   en: "Ollama local inference service (Anthropic-compatible endpoint + System One decision endpoint)"
   ja: "Ollama ローカル推論サービス（Anthropic 互換エンドポイント + System One 意思決定エンドポイント）"
 homepage: "https://ollama.com"
@@ -20,6 +21,14 @@ compatibility_notes:
     3. 模型需手动输入 tag (如 "qwen3-coder", "glm-4.7:cloud"). 本地模型用 `ollama list` 查看.
     4. 「System One」端点 (/v1/systemone) 只服务决策类模型 (如 clef-flash), 需 Ollama 0.35
        及以上; 这类订阅只能绑定到 model-jev.
+  zh-Hant: |
+    1. Ollama 僅監聽 localhost:11434, 沒有公網端點; 雲端模型 (如 glm-4.7:cloud)
+       也是透過本地 Ollama 客戶端轉發, 使用前必須本機已安裝 Ollama 並 pull/login
+       對應模型.
+    2. Token預設填寫"ollama".
+    3. 模型需手動輸入 tag (如 "qwen3-coder", "glm-4.7:cloud"). 本地模型用 `ollama list` 檢視.
+    4. 「System One」端點 (/v1/systemone) 只服務決策類模型 (如 clef-flash), 需 Ollama 0.35
+       及以上; 這類訂閱只能綁定到 model-jev.
   en: |
     1. Ollama only listens on localhost:11434 and has no public endpoint; cloud models (e.g. glm-4.7:cloud)
        are also forwarded through the local Ollama client, so Ollama must be installed locally and the
@@ -41,10 +50,12 @@ endpoints:
   - id: localhost
     label:
       zh: "本地 · 默认端口"
+      zh-Hant: "本地 · 預設連接埠"
       en: "Local · Default port"
       ja: "ローカル · 既定ポート"
     description:
       zh: "本机已运行 Ollama (默认 11434 端口)"
+      zh-Hant: "本機已執行 Ollama (預設 11434 連接埠)"
       en: "Ollama running on this machine (default port 11434)"
       ja: "このマシンで Ollama が起動済み（既定ポート 11434）"
     base_url: "http://localhost:11434"
@@ -54,10 +65,12 @@ endpoints:
   - id: localhost_systemone
     label:
       zh: "本地 · System One（决策模型）"
+      zh-Hant: "本地 · System One（決策模型）"
       en: "Local · System One (decision models)"
       ja: "ローカル · System One（意思決定モデル）"
     description:
       zh: "Ollama 0.35+ 的 /v1/systemone, 只用于 model-jev"
+      zh-Hant: "Ollama 0.35+ 的 /v1/systemone, 只用於 model-jev"
       en: "Ollama 0.35+ /v1/systemone, for model-jev only"
       ja: "Ollama 0.35+ の /v1/systemone。model-jev 専用"
     base_url: "http://localhost:11434"

@@ -8,6 +8,7 @@ use crate::client::dto::{QuotaPeriod, RoutingMode, SubscriptionState};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lang {
     Zh,
+    ZhHant,
     En,
     Ja,
 }
@@ -15,7 +16,7 @@ pub enum Lang {
 /// 变体个数。穷尽 `match`: 加一种语言时这里先编译失败, 改的人就在列全变体的这一行旁边改数字,
 /// 数字一变下面的长度断言就逼着 [`Lang::ALL`] 一起补上。
 const LANG_COUNT: usize = match Lang::Zh {
-    Lang::Zh | Lang::En | Lang::Ja => 3,
+    Lang::Zh | Lang::ZhHant | Lang::En | Lang::Ja => 4,
 };
 
 // 长度等于变体个数且元素两两不同, 合起来就是「每种语言恰好一次」。长度单独断言而不只靠
@@ -34,18 +35,17 @@ const _: () = {
 };
 
 impl Lang {
-    /// 全部语言, 三语守卫与快照测试都遍历它而不是各自手写一份。
-    pub const ALL: [Lang; 3] = [Lang::Zh, Lang::En, Lang::Ja];
+    /// 全部语言, 多语守卫与快照测试都遍历它而不是各自手写一份。
+    pub const ALL: [Lang; 4] = [Lang::Zh, Lang::ZhHant, Lang::En, Lang::Ja];
 
-    /// `preferred` 来自桌面端设置 (`"system"` / `"zh"` / `"en"` / `"ja"`)。
+    /// `preferred` 来自桌面端设置 (`"system"` / `"zh"` / `"zh-Hant"` / `"en"` / `"ja"`)。
     /// `system_tag` 是 runtime.json 里桌面端下发的原始系统语言标签 (`tauri_plugin_os::locale()`
     /// 的原样值), 只有连上桌面端才拿得到。
     ///
-    /// 解析顺序: 显式 `zh`/`en`/`ja` 优先命中即返回; `"system"` / 空串 / **任何未知值**都跟随系统——
+    /// 解析顺序: 显式 `zh`/`zh-Hant`/`en`/`ja` 优先命中即返回; `"system"` / 空串 / **任何未知值**都跟随系统——
     /// 与 `tray.rs::TrayLocale::resolve` 一致, 未知偏好不是 en, 而是像 `"system"` 一样继续探测。
     /// 系统探测顺序: `system_tag` (非空) → 环境变量 `LC_ALL` → `LC_MESSAGES` → `LANG` → en。
-    /// 映射规则 (大小写不敏感) 与桌面端 `src/i18n/index.tsx::detectSystemLocale` / `tray.rs` 一致:
-    /// `zh*` → zh, `ja*` → ja, 其余 → en。
+    /// 标签到语言的映射见 [`Lang::from_tag`]。
     ///
     /// 连接之前 `preferred` 取 runtime.json 里的 `preferred_language`, 那是桌面端**启动时**写下的值,
     /// 运行期间改语言不会重写那个文件——所以 app 运行中改过语言的话, 连接前的提示 (「未启用」等)
@@ -54,6 +54,7 @@ impl Lang {
     pub fn resolve(preferred: &str, system_tag: Option<&str>, env: impl Fn(&str) -> Option<String>) -> Self {
         let tag = match preferred {
             "zh" => return Self::Zh,
+            "zh-Hant" => return Self::ZhHant,
             "en" => return Self::En,
             "ja" => return Self::Ja,
             // "system"、空串、以及任何未知值都走系统探测。
@@ -64,13 +65,32 @@ impl Lang {
                     .unwrap_or_default()
             }),
         };
-        let lower = tag.to_ascii_lowercase();
-        if lower.starts_with("zh") {
-            Self::Zh
-        } else if lower.starts_with("ja") {
-            Self::Ja
-        } else {
-            Self::En
+        Self::from_tag(&tag)
+    }
+
+    /// 系统语言标签 → 语言。与桌面端 `src/i18n/localeTag.ts::localeFromTag`、托盘
+    /// `tray/strings.rs::TrayLocale::from_tag` 是同一条规则, 由仓库根 `src/i18n/locale-cases.json`
+    /// 锁住 —— 改规则先改用例表。小写、`_`→`-`、截掉 `.编码` / `@修饰` 后按子标签判定;
+    /// 书写系统 (hant / hans) 优先于地区。`LANG=zh_TW.UTF-8` 就是靠前两步才认得出来。
+    pub fn from_tag(tag: &str) -> Self {
+        let lower = tag.trim().to_ascii_lowercase().replace('_', "-");
+        let norm = lower.split(['.', '@']).next().unwrap_or("");
+        let parts: Vec<&str> = norm.split('-').filter(|p| !p.is_empty()).collect();
+        match parts.first().copied() {
+            // 粤语 (`yue`, macOS 的「粵語（繁體）」) 同样判定, 什么都不带时默认繁中。
+            Some(lang @ ("zh" | "yue")) => {
+                if parts.contains(&"hant") {
+                    Self::ZhHant
+                } else if parts.contains(&"hans") {
+                    Self::Zh
+                } else if parts.iter().any(|p| matches!(*p, "tw" | "hk" | "mo")) || lang == "yue" {
+                    Self::ZhHant
+                } else {
+                    Self::Zh
+                }
+            }
+            Some("ja") => Self::Ja,
+            _ => Self::En,
         }
     }
 }
@@ -245,6 +265,10 @@ pub struct Strings {
     pub sub_busy_deleting: &'static str,
     /// 草稿里跟 `Store` 当前值不同的槽位行末尾追加的 muted 提示。
     pub sub_slot_modified: &'static str,
+    /// 槽位配了时段规则时, 详情槽位行末尾的标记。
+    pub slot_scheduled: &'static str,
+    /// 槽位配了时段规则、此刻却没有任何模型生效 (没命中规则且默认值为空) 时的显示。
+    pub slot_unavailable_now: &'static str,
     /// 有草稿时按 e/t/m/b 的拒绝提示 (避免重拉覆盖编辑基线)。
     pub sub_save_first: &'static str,
     /// 兜底槽 / Kiro 订阅上按 `o` 改思考档位的拒绝提示 (两种原因各一条)。
@@ -785,6 +809,8 @@ pub const ZH: Strings = Strings {
     sub_busy_saving: "正在保存…",
     sub_busy_deleting: "正在删除…",
     sub_slot_modified: "已修改",
+    slot_scheduled: "分时段",
+    slot_unavailable_now: "此时段不可用",
     sub_save_first: "先按 s 保存或 Esc 放弃当前修改",
     sub_effort_na_fallback: "兜底槽没有思考档位",
     sub_effort_na_kiro: "Kiro 不支持思考档位",
@@ -1052,6 +1078,429 @@ cc-router-tui — cc-router 的终端界面
 /// 术语沿用桌面端 `src/i18n/locales/en.json` (Subscription / Virtual model / Provider / Endpoint /
 /// Reasoning effort / Fallback / Quota / Balance / Live routing / Request logs …)。英文普遍比中文宽,
 /// 定宽列都由布局按实际文字宽度推导, 这里不为了塞进中文的列宽去缩写。
+/// 繁体中文 (台湾用语), 术语见 src/i18n/zh-Hant-glossary.md。
+pub const ZH_HANT: Strings = Strings {
+    lang: Lang::ZhHant,
+    tabs: ["總覽", "訂閱", "虛擬模型", "即時路由", "紀錄"],
+    conn_connecting: "連線中",
+    conn_connected: "已連線",
+    conn_reconnecting: "重連中",
+
+    key_switch_tab: "切頁",
+    key_refresh: "重新整理",
+    key_help: "說明",
+    key_quit: "結束",
+    key_close: "關閉",
+    key_select: "選擇",
+    key_detail: "詳情",
+    key_back: "返回",
+    key_toggle: "啟停",
+    key_test: "測試",
+    key_models: "模型",
+    key_balance: "餘額",
+    key_edit_model: "改模型",
+    key_edit_effort: "改檔位",
+    key_save: "儲存",
+    key_discard: "放棄",
+    key_move: "移動",
+    key_add: "加入",
+    key_remove: "移除",
+    key_mode: "模式",
+    key_members: "成員",
+    key_new: "新建",
+    key_delete: "刪除",
+    key_cancel: "取消",
+
+    help_title: "鍵位",
+    help_rows: &[
+        ("1-5", "直達對應頁面"),
+        ("Tab / Shift+Tab", "下一頁 / 上一頁"),
+        ("r", "重新整理目前頁面"),
+        ("?", "開啟 / 關閉本說明"),
+        ("Esc", "關閉彈窗"),
+        ("q / Ctrl+C", "結束"),
+    ],
+
+    confirm_title: "確認",
+    confirm_keys: "y 是   n 否",
+    confirm_discard: "有未儲存的修改,確定放棄嗎?",
+
+    picker_use_typed: |text| format!("使用「{text}」"),
+    picker_empty: "沒有符合項",
+    picker_type_to_enter: "輸入後按 ⏎ 使用該文字",
+    picker_keys: "⏎ 選擇   Esc 取消",
+    pick_model_title: |slot| format!("選擇 {slot} 的模型"),
+    pick_effort_title: |slot| format!("選擇 {slot} 的思考檔位"),
+    pick_clear_fallback: "(清空備援槽)",
+    pick_clear_jev: "(清空 Jev 槽)",
+
+    detail_keys: "↑↓ 滾動   Esc 關閉",
+
+    too_small: "請放大終端機視窗（至少 80×24）",
+    loading: "載入中",
+    version_mismatch: |tui, app| format!("終端機介面版本 {tui} 與 app 版本 {app} 不一致，請在桌面 app 的設定頁重新新增到 PATH"),
+
+    ov_today: "今日",
+    ov_requests: "請求",
+    ov_success_rate: "成功率",
+    ov_tokens: "Token",
+    ov_hourly: "每小時請求",
+    ov_health: "訂閱健康度",
+    ov_auth_on: "驗證 開啟",
+    ov_auth_off: "驗證 關閉",
+    ov_listen_all: "監聽 0.0.0.0",
+    ov_subs_summary: |total, ok| format!("{total} 個訂閱 · {ok} 個可調度"),
+    ov_no_subs: "還沒有訂閱，請先在桌面 app 裡新增",
+    ov_more_rows: |n| format!("… 還有 {n} 個"),
+
+    st_healthy: "正常",
+    st_rate_limited: "限流",
+    st_quota_exhausted: "額度用盡",
+    st_transient_error: "暫時性錯誤",
+    st_auth_failed: "憑證失效",
+    st_disabled: "已停用",
+    st_unknown: "未知",
+    st_quota_reached: "已達額度",
+
+    q_daily: "日額度",
+    q_weekly: "週額度",
+    q_monthly: "月額度",
+    q_total: "總額度",
+
+    toast_reconnected: "已重新連線",
+    toast_load_failed: |reason| format!("載入失敗：{reason}"),
+    toast_offline: "未連線,暫時無法操作",
+    toast_busy: |name| format!("{name}：上一個操作還沒完成,請稍候"),
+    toast_enabled: |name| format!("已啟用 {name}"),
+    toast_disabled: |name| format!("已停用 {name}"),
+    toast_test_ok: |name, model| match model {
+        Some(model) => format!("{name}：連線正常 ({model})"),
+        None => format!("{name}：連線正常"),
+    },
+    toast_test_failed: |name, message| format!("{name}：{message}"),
+    toast_models_ok: |name, n| format!("{name}：取得 {n} 個模型"),
+    toast_models_manual: |name, reason| format!("{name}：無法自動取得模型 ({reason})"),
+    toast_balance_ok: |name| format!("{name}：餘額已重新整理"),
+    toast_balance_failed: |name, reason| format!("{name}：餘額查詢失敗 ({reason})"),
+    toast_mutation_failed: |name, message| format!("{name}：操作失敗 ({message})"),
+    toast_slots_saved: |name| format!("{name}：槽位已儲存"),
+    toast_vm_saved: |vm| format!("{vm}：已儲存"),
+
+    sub_title: |n| format!("訂閱 ({n})"),
+    sub_col_name: "備註名",
+    sub_col_provider: "廠商",
+    sub_col_sonnet: "sonnet",
+    sub_col_state: "狀態",
+    sub_f_state: "狀態",
+    sub_f_provider: "廠商",
+    sub_f_endpoint: "端點",
+    sub_f_slots: "槽位",
+    sub_f_quota: "額度",
+    sub_f_balance: "餘額",
+    sub_f_models: "模型",
+    sub_f_referenced: "被引用",
+    sub_f_last_error: "最近錯誤",
+    sub_f_last_action: "上次操作",
+    sub_slot_fallback: "備援",
+    sub_slot_unset: "(未設定)",
+    sub_effort_auto: "auto",
+    sub_balance_unsupported: "該廠商不支援餘額查詢",
+    sub_balance_never: "還沒查過,按 b 重新整理",
+    sub_balance_unavailable: "帳戶無法使用 (可能欠費或被封)",
+    sub_models_cached: |n| format!("已快取 {n} 個"),
+    sub_models_never: "還沒取得過,按 m 重新整理",
+    sub_models_na_systemone: "System One 訂閱沒有模型列表",
+    sub_unreferenced: "沒有被任何虛擬模型引用",
+    sub_help_rows: &[
+        ("↑↓ / j k", "上一條 / 下一條"),
+        ("g / G", "第一條 / 最後一條"),
+        ("PgUp / PgDn", "翻頁"),
+        ("⏎ / → / l", "進入詳情"),
+        ("Esc / ← / h", "離開詳情"),
+        // 與「改目前槽位的模型」「改目前槽位的思考檔位」兩行合併——新增 n/d 兩行後說明彈窗剛好
+        // 頂到最小終端機高度, 合併這一對騰出一行 (`every_page_help_fits_the_minimum_terminal`)。
+        ("⏎ / o (詳情內)", "改模型 / 改思考檔位"),
+        ("s", "儲存槽位修改"),
+        ("e", "啟用 / 停用"),
+        ("t", "測試連線"),
+        ("m", "重新整理模型列表"),
+        ("b", "重新整理餘額"),
+        ("n", "新建訂閱"),
+        ("d", "刪除訂閱"),
+    ],
+    sub_busy_toggling: "正在切換…",
+    sub_busy_testing: "正在測試連線…",
+    sub_busy_models: "正在取得模型…",
+    sub_busy_balance: "正在查詢餘額…",
+    sub_busy_saving: "正在儲存…",
+    sub_busy_deleting: "正在刪除…",
+    sub_slot_modified: "已修改",
+    slot_scheduled: "分時段",
+    slot_unavailable_now: "此時段不可用",
+    sub_save_first: "先按 s 儲存或 Esc 放棄目前修改",
+    sub_effort_na_fallback: "備援槽沒有思考檔位",
+    sub_effort_na_kiro: "Kiro 不支援思考檔位",
+    sub_effort_na_jev: "Jev 協議沒有思考強度",
+    sub_model_required: "模型不能為空",
+    sub_gone: "這條訂閱已不存在",
+    saving_in_progress: "正在儲存,請稍候",
+
+    sub_confirm_delete: |name| format!("刪除訂閱「{name}」?"),
+    sub_delete_refs: |n| format!("這條訂閱被 {n} 個虛擬模型引用,刪除後會自動解綁:"),
+    sub_delete_refs_more: |n| format!("… 等 {n} 個"),
+    toast_deleted: |name| format!("已刪除「{name}」"),
+    list_sep: "、",
+
+    vm_title: "虛擬模型",
+    vm_mode_seq: "依序",
+    vm_mode_rr: "輪詢",
+    vm_mode_sticky: "工作階段",
+    vm_mode_unknown: "未知",
+    vm_mode_full_seq: "依序 (sequential)",
+    vm_mode_full_rr: "輪詢 (round_robin)",
+    vm_mode_full_sticky: "工作階段親和 (sticky)",
+    vm_mode_full_unknown: "未知",
+    vm_members_summary: |mode, n| format!("{mode} · {n} 個訂閱"),
+    vm_empty: "還沒有綁定訂閱,按 a 加入",
+    vm_missing: "(已刪除)",
+    vm_will_skip: "將被跳過",
+    vm_nothing_to_add: "所有訂閱都已在列表裡",
+    vm_nothing_to_add_jev: "沒有可加入的 System One 訂閱",
+    vm_jev_tag: "JEV · 決策模型 · /v1/systemone",
+    vm_remove_ghosts_first: "列表裡有已刪除的訂閱,請先按 x 移除",
+    vm_pick_add_title: |vm| format!("給 {vm} 加入訂閱"),
+    vm_unknown_mode: "這個調度模式目前版本不認識,請在桌面 app 裡修改",
+    vm_subs_not_loaded: "訂閱列表還沒載入完,請稍候",
+    vm_help_rows: &[
+        ("↑↓ / j k", "上一項 / 下一項"),
+        ("⏎ / → / l", "進入訂閱列表"),
+        ("Esc / ← / h", "返回虛擬模型列表"),
+        ("J / K", "下移 / 上移目前訂閱"),
+        ("a", "加入訂閱"),
+        ("x", "移除目前訂閱"),
+        ("m", "切換調度模式"),
+        ("s", "儲存修改"),
+    ],
+
+    live_spark_title: "最近 60 秒",
+    live_spark_total: |n| format!("{n} 次"),
+    live_title: "即時路由",
+    live_empty: "還沒有路由事件，Claude Code 發出請求後會出現在這裡",
+    live_empty_filtered: "沒有符合過濾條件的事件 · Esc 清除過濾",
+    live_following: "跟隨最新",
+    live_paused: |n| format!("已暫停 · 新增 {n} 條"),
+    live_count: |n| format!("共 {n} 條"),
+    live_gap: "連線中斷，期間的事件未收到",
+    live_interrupted: "中斷",
+    live_filter_title: "按虛擬模型或訂閱過濾",
+    live_filter_all: "全部 (清除過濾)",
+    filter_summary: |what| format!("過濾 {what}"),
+    filter_dim_vm: "虛擬模型",
+    filter_dim_sub: "訂閱",
+    key_space: "空白鍵",
+    key_pause: "暫停",
+    key_resume: "繼續",
+    key_latest: "最新",
+    key_filter: "過濾",
+    key_clear_filter: "清除過濾",
+    live_help_rows: &[
+        ("空白鍵", "暫停 / 繼續 (暫停時新事件先緩衝)"),
+        ("↑↓ / j k", "選擇一行 (離開「跟隨最新」)"),
+        ("PgUp / PgDn", "翻頁"),
+        ("g / G", "最早一行 / 回到最新並繼續"),
+        ("⏎", "檢視該訂閱的請求紀錄"),
+        ("/", "按虛擬模型或訂閱過濾"),
+        ("Esc", "清除過濾 / 回到最新"),
+        ("耗時", "串流到上游開始回應, 非串流到回應結束"),
+        ("並行", "同一虛擬模型 + 訂閱的並行嘗試按先後配對"),
+    ],
+
+    lg_title: "請求紀錄",
+    lg_col_time: "時間",
+    lg_col_status: "狀態",
+    lg_col_vm: "虛擬模型",
+    lg_col_sub: "訂閱",
+    lg_col_model: "模型",
+    lg_col_latency: "耗時",
+    lg_col_tokens: "Token 入/出",
+    lg_col_client: "客戶端",
+    lg_page: |page, pages, total| format!("第 {page}/{pages} 頁 · 共 {total} 條"),
+    lg_empty: "還沒有請求記錄",
+    lg_empty_filtered: "沒有符合條件的請求 · Esc 清除過濾",
+    lg_filter_title: "過濾請求紀錄",
+    lg_filter_clear: "清除全部過濾",
+    filter_dim_status: "狀態",
+    filter_active: "目前 · 再選一次取消",
+    lg_status_success: "成功",
+    lg_status_error: "失敗",
+    lg_status_timeout: "逾時",
+    lg_status_timeout_short: "逾時",
+    lg_status_unknown: "未知",
+    key_page: "翻頁",
+    key_logs: "紀錄",
+    lg_help_rows: &[
+        ("↑↓ / j k", "上一條 / 下一條"),
+        ("g / G", "本頁第一條 / 最後一條"),
+        ("PgUp / PgDn", "本頁內翻屏"),
+        ("n / p", "下一頁 / 上一頁"),
+        ("⏎", "檢視詳情"),
+        ("/", "按訂閱 / 虛擬模型 / 狀態過濾"),
+        ("Esc", "清除過濾"),
+        ("自動重新整理", "只在第 1 頁, 每 5 秒"),
+    ],
+    lg_d_title: "請求詳情",
+    lg_d_basic: "基本資訊",
+    lg_d_effort: "思考強度",
+    lg_d_tools: "工具呼叫",
+    lg_d_error: "錯誤訊息",
+    lg_d_body: "上游回應",
+    lg_d_time: "時間",
+    lg_d_id: "請求 ID",
+    lg_d_status: "狀態",
+    lg_d_vm: "虛擬模型",
+    lg_d_real_model: "真實模型",
+    lg_d_resp_model: "回應模型",
+    lg_d_sub: "訂閱",
+    lg_d_provider: "廠商 / 端點",
+    lg_d_latency: "耗時",
+    lg_d_streaming: "串流",
+    lg_d_tokens: "Token",
+    lg_d_client: "客戶端",
+    lg_d_ip: "客戶端 IP",
+    lg_d_ua: "User-Agent",
+    lg_d_entry: "入口",
+    lg_d_http_version: "HTTP 版本",
+    lg_d_status_value: |status, http| match http {
+        Some(code) => format!("{status} · HTTP {code}"),
+        None => status.to_string(),
+    },
+    lg_d_tokens_value: |i, o, cw, cr| format!("輸入 {i} · 輸出 {o} · 快取寫 {cw} · 快取讀 {cr}"),
+    lg_yes: "是",
+    lg_no: "否",
+    lg_d_effort_client: "客戶端請求",
+    lg_d_effort_effective: "實際生效",
+    lg_d_effort_upstream: "上游回顯",
+    lg_d_effort_upstream_none: "上游未回顯",
+    lg_effort_source: |src| match src {
+        "slot" => "訂閱槽位強制".to_string(),
+        "client" => "客戶端透傳".to_string(),
+        "yaml" => "provider 預設".to_string(),
+        other => other.to_string(),
+    },
+    lg_d_effort_source_suffix: |label| format!("（{label}）"),
+    lg_d_stop_reason: "結束原因",
+    lg_d_tools_offered: "宣告工具數",
+    lg_d_tool_results: "回傳結果數",
+    lg_d_tool_uses: "本次呼叫",
+    lg_d_tool_names: "工具名",
+    lg_d_truncated: "(已截斷)",
+    lg_d_unnamed: "(未命名)",
+
+    wiz_title: "新建訂閱",
+    wiz_loading_providers: "正在取得廠商列表…",
+    wiz_load_failed: |reason| format!("取得廠商列表失敗: {reason}"),
+
+    wiz_steps: ["① 基本資訊", "② 綁定模型"],
+    wiz_f_provider: "廠商",
+    wiz_f_endpoint: "接入點",
+    wiz_f_api_key: "API Key",
+    wiz_f_display_name: "備註名",
+    wiz_btn_next: "下一步",
+    wiz_pick_provider: "選擇廠商",
+    wiz_pick_endpoint: "選擇接入點",
+    wiz_pick_provider_first: "請先選擇廠商",
+    wiz_desktop_only: "請在桌面端新增",
+    wiz_custom_labels: [
+        "自訂 · Anthropic 相容",
+        "自訂 · Gemini",
+        "自訂 · OpenAI Responses",
+        "自訂 · OpenAI Chat Completions",
+        "自訂 · Gemini Interactions",
+        "自訂 · System One",
+    ],
+    wiz_err_api_key: "API Key 不能為空",
+    wiz_err_display_name: "備註名不能為空",
+    wiz_err_url_param_empty: "請填寫此項",
+    wiz_err_url_param_format: "格式不正確",
+    wiz_err_provider: "請選擇廠商",
+    wiz_err_endpoint: "請選擇接入點",
+    wiz_creating: "正在建立訂閱…",
+    wiz_created: |name| format!("已建立「{name}」"),
+    wiz_create_failed: |reason| format!("建立失敗: {reason}"),
+
+    wiz_loading_models: "正在取得模型列表…",
+    wiz_save_failed: |reason| format!("儲存失敗: {reason}"),
+    wiz_models_manual: |reason| format!("自動取得模型列表失敗, 請手動填寫: {reason}"),
+    wiz_pick_model: |slot| format!("為 {slot} 選擇模型"),
+    wiz_btn_save: "儲存",
+    wiz_err_slot: "請填寫模型",
+    wiz_err_jev_model: "請填寫 Jev 模型",
+    wiz_confirm_exit_pending: "訂閱已經建立, 但模型槽位還是 (pending)。離開嚮導? (稍後可以在訂閱頁設定)",
+    wiz_saving: "正在儲存…",
+
+    wiz_custom_title: "新建訂閱 · 自訂",
+    wiz_f_protocol: "協議",
+    wiz_f_provider_name: "廠商名",
+    wiz_f_base_url: "Base URL",
+    wiz_f_messages_path: "請求路徑",
+    wiz_f_auth: "驗證",
+    wiz_btn_probe: "取得模型列表",
+    wiz_btn_create: "建立",
+    wiz_pick_protocol: "選擇協議",
+    wiz_pick_auth: "選擇驗證方式",
+    wiz_auth_labels: ["Authorization: Bearer <key>", "x-api-key: <key>"],
+    wiz_err_provider_name: "請填寫廠商名",
+    wiz_err_base_url_empty: "請填寫 Base URL",
+    wiz_err_base_url_scheme: "Base URL 必須以 http:// 或 https:// 開頭",
+    wiz_err_messages_path: "請求路徑必須以 / 開頭",
+    wiz_err_gemini_placeholder: "Gemini 的請求路徑必須包含 {model}",
+    wiz_probing: "正在取得模型列表…",
+    wiz_protocol_names: ["Anthropic 相容", "Gemini", "OpenAI Responses", "OpenAI Chat Completions", "Gemini Interactions", "System One"],
+
+    key_field: "欄位",
+    key_pick: "選擇",
+    key_next_field: "下一項",
+    key_reveal: "顯示 / 隱藏",
+    form_more: "… 內容放不下",
+
+    err_not_running: "cc-router 未在執行",
+    err_disabled: "終端機介面未啟用",
+    err_network: |detail| format!("網路錯誤: {detail}"),
+    err_bad_response: |detail| format!("回應無法解析: {detail}"),
+    err_read_file: |path, detail| format!("讀取 {path}: {detail}"),
+    err_data_dir_env: |var| format!("無法確定資料目錄: 環境變數 {var} 未設定"),
+    err_file_missing: |path| format!("未找到 {path}"),
+    err_file_corrupt: |path, detail| format!("{path} 已損壞: {detail}"),
+    err_no_port: |path| format!("{path} 裡沒有可用連接埠"),
+
+    cli_help: "\
+cc-router-tui — cc-router 的終端機介面
+
+用法: cc-router-tui [選項]
+不帶參數執行即進入介面 (需要 cc-router 桌面 app 正在執行, 且已在 設定 → 安全與存取 → 終端機介面 開啟開關)。
+
+選項:
+  --check            連線正在執行的 cc-router 並顯示狀態, 然後結束
+  --data-dir <路徑>  指定 cc-router 的資料目錄 (預設按系統規則查詢)
+  --no-fx            關閉動效 (也可以設環境變數 CCR_TUI_NO_FX=1)
+  -V, --version      顯示版本
+  -h, --help         顯示本說明
+",
+    cli_err_missing_data_dir_path: "--data-dir 需要一個路徑",
+    cli_err_unknown_arg: |arg| format!("未知參數: {arg}"),
+    cli_discovery_hint: "請先啟動 cc-router 桌面 app。",
+    cli_not_running_hint: "。請先啟動桌面 app。",
+    cli_disabled_hint: "。請在桌面 app 的 設定 → 安全與存取 → 終端機介面 開啟開關。",
+    cli_terminal_init_failed: |err| format!("無法初始化終端機: {err}\n請在真正的終端機視窗裡執行 cc-router-tui。"),
+    cli_check_connected: |app_version, pid| format!("已連線 cc-router {app_version} (pid {pid})"),
+    cli_check_addr: |base_url| format!("  位址     {base_url}"),
+    cli_check_mode: |mode, listen_all| format!("  模式     {mode}{}", if listen_all { " · 監聽 0.0.0.0" } else { "" }),
+    cli_check_subs: |total, dispatchable| format!("  訂閱     {total} 個, {dispatchable} 個可調度"),
+    cli_check_lang: |lang| format!("  語言     {lang}"),
+    cli_check_events_ok: "  事件流   正常",
+    cli_check_version_mismatch: |tui, app| format!("\n注意: TUI 版本 {tui} 與 app 版本 {app} 不一致。"),
+};
+
 pub const EN: Strings = Strings {
     lang: Lang::En,
     tabs: ["Overview", "Subscriptions", "Virtual models", "Live routing", "Logs"],
@@ -1215,6 +1664,8 @@ pub const EN: Strings = Strings {
     sub_busy_saving: "Saving…",
     sub_busy_deleting: "Deleting…",
     sub_slot_modified: "modified",
+    slot_scheduled: "scheduled",
+    slot_unavailable_now: "not available now",
     sub_save_first: "Press s to save or Esc to reset your changes first",
     sub_effort_na_fallback: "The fallback slot has no reasoning effort",
     sub_effort_na_kiro: "Kiro does not support reasoning effort",
@@ -1649,6 +2100,8 @@ pub const JA: Strings = Strings {
     sub_busy_saving: "保存中…",
     sub_busy_deleting: "削除中…",
     sub_slot_modified: "変更あり",
+    slot_scheduled: "時間帯別",
+    slot_unavailable_now: "この時間帯は利用不可",
     sub_save_first: "先に s で保存するか、Esc で変更を破棄してください",
     sub_effort_na_fallback: "フォールバックスロットでは思考強度を設定できません",
     sub_effort_na_kiro: "Kiro は思考強度に対応していません",
@@ -1923,6 +2376,7 @@ cc-router-tui — cc-router のターミナル UI
 pub fn strings(lang: Lang) -> &'static Strings {
     match lang {
         Lang::Zh => &ZH,
+        Lang::ZhHant => &ZH_HANT,
         Lang::En => &EN,
         Lang::Ja => &JA,
     }
@@ -1970,12 +2424,64 @@ mod tests {
         assert_eq!(Lang::resolve("fr", Some("zh-Hans-CN"), env(&[])), Lang::Zh);
     }
 
+    const LOCALE_CASES: &str = include_str!("../../../../src/i18n/locale-cases.json");
+
+    /// 与桌面端 `src/i18n/localeTag.ts::localeFromTag`、托盘 `TrayLocale::from_tag` 的契约: 三处读同一张用例表。
     #[test]
-    fn mapping_matches_the_desktop_rule_case_insensitively() {
-        assert_eq!(Lang::resolve("system", Some("ZH-Hant"), env(&[])), Lang::Zh);
-        assert_eq!(Lang::resolve("system", Some("Ja"), env(&[])), Lang::Ja);
-        assert_eq!(Lang::resolve("system", Some("en-US"), env(&[])), Lang::En);
-        assert_eq!(Lang::resolve("system", Some("pt-BR"), env(&[])), Lang::En);
+    fn system_tags_follow_the_shared_rule() {
+        #[derive(serde::Deserialize)]
+        struct Case {
+            tag: String,
+            expect: String,
+        }
+        let cases: Vec<Case> = serde_json::from_str(LOCALE_CASES).expect("locale-cases.json 解析失败");
+        for c in cases {
+            let want = match c.expect.as_str() {
+                "zh" => Lang::Zh,
+                "zh-Hant" => Lang::ZhHant,
+                "en" => Lang::En,
+                "ja" => Lang::Ja,
+                other => panic!("用例表里有未知语言 {other}"),
+            };
+            assert_eq!(Lang::from_tag(&c.tag), want, "tag {:?}", c.tag);
+            assert_eq!(Lang::resolve("system", Some(&c.tag), env(&[])), want, "tag {:?}", c.tag);
+        }
+    }
+
+    const SIMPLIFIED_ONLY: &str = include_str!("../../../../src/i18n/simplified-only.txt");
+
+    /// `pub const <name>: ` 起到下一个列首 `};` 的整块, 去掉整行注释。
+    fn const_block(src: &str, name: &str) -> String {
+        let start = src.find(&format!("pub const {name}: ")).unwrap_or_else(|| panic!("找不到 pub const {name}"));
+        let rest = &src[start..];
+        let end = rest.find("\n};").unwrap_or_else(|| panic!("const {name} 没有以列首 `}};` 结束"));
+        rest[..end].lines().filter(|l| !l.trim_start().starts_with("//")).collect::<Vec<_>>().join("\n")
+    }
+
+    /// 繁中常量必须逐字段写全 (不许 `..ZH` 回退), 而且不许混进简体专用字 (字表与前端 / 厂商 yaml 共用)。
+    #[test]
+    fn zh_hant_is_fully_translated() {
+        let block = const_block(include_str!("i18n.rs"), "ZH_HANT");
+        assert!(!block.contains("..ZH"), "ZH_HANT 还在用 ..ZH 回退");
+        let table: std::collections::HashSet<char> = SIMPLIFIED_ONLY
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .flat_map(str::chars)
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let mut residue: Vec<char> = Vec::new();
+        for c in block.chars().filter(|c| table.contains(c)) {
+            if !residue.contains(&c) {
+                residue.push(c);
+            }
+        }
+        assert!(residue.is_empty(), "ZH_HANT 里有简体字: {residue:?}");
+    }
+
+    #[test]
+    fn posix_lang_reaches_traditional_chinese() {
+        assert_eq!(Lang::resolve("system", None, env(&[("LANG", "zh_TW.UTF-8")])), Lang::ZhHant);
+        assert_eq!(Lang::resolve("zh-Hant", None, env(&[("LANG", "en_US.UTF-8")])), Lang::ZhHant);
     }
 
     /// 标签栏一行放得下: 每个标签渲染成 ` N 名称 `, 之间一个分隔符, 总宽 ≤ 76 (80 列减边框与内距)。

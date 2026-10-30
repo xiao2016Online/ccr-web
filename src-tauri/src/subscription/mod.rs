@@ -5,6 +5,7 @@ pub mod model_discovery;
 pub mod ping;
 pub mod quota;
 pub mod recheck_worker;
+pub mod schedule;
 pub mod snapshot;
 pub mod state_machine;
 pub mod store;

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, Copy, Plus, Search } from "lucide-react";
+import { Check, Copy, Search } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,16 +9,22 @@ import {
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProviderLogo } from "@/components/ProviderLogo";
-import { SortableSubscriptionList } from "@/components/SortableSubscriptionList";
+import { ViewTimeBar } from "@/components/schedule/ViewTimeBar";
+import { VmRouteMap } from "@/components/schedule/VmRouteMap";
+import { buildRouteMap, pageModelColors, type RouteMapData } from "@/components/schedule/routeMap";
+import { useHostClock } from "@/hooks/useHostClock";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 import { useProxyStatus } from "@/hooks/useSettings";
 import { useVirtualModels, useUpdateVirtualModel } from "@/hooks/useVirtualModels";
 import { isAnthropicPassthrough } from "@/lib/authTypes";
+import type { ModelColor } from "@/lib/modelColor";
+import { hhmm, isNowSelection, type WallClock } from "@/lib/slotSchedule";
+import { slotNow, slotNowText } from "@/lib/slotNow";
 import { customProviderLabel } from "@/lib/providerLabels";
 import { providerName as localProviderName } from "@/lib/providerText";
 import { VM_META, VM_ORDER, isJev, jevModelOf, vmAccepts, vmNameToSlot } from "@/lib/virtualModels";
 import { runtime } from "@/runtime";
-import { useT } from "@/i18n";
+import { useT, type TFunction } from "@/i18n";
 import type {
   RoutingMode,
   SubscriptionDto,
@@ -27,16 +33,32 @@ import type {
   VirtualModelName,
 } from "@/types";
 
+const MODES: RoutingMode[] = ["sequential", "round_robin", "sticky"];
+
 export function VirtualModelsPage() {
   const { t } = useT();
   const subs = useSubscriptions();
   const vms = useVirtualModels();
+  const clock = useHostClock();
+  // null = 跟随宿主机此刻; 选过星期 / 滑块后固定在所选时刻
+  const [selected, setSelected] = useState<WallClock | null>(null);
+  const isNow = isNowSelection(selected, clock ?? null);
+  const base = selected ?? clock;
+  const weekday = base?.weekday;
+  const minute = base?.minute;
+  // 只在星期 / 分钟变化时换新对象: 路由图按 at 记忆化, 宿主机时钟每 30 秒的重渲染不必重算
+  const at = useMemo<WallClock | null>(
+    () => (weekday === undefined || minute === undefined ? null : { weekday, minute }),
+    [weekday, minute],
+  );
 
   const subsMap = useMemo(() => {
     const m = new Map<string, SubscriptionDto>();
     subs.data?.forEach((s) => m.set(s.id, s));
     return m;
   }, [subs.data]);
+  // 订阅列表没到时 subsMap 为空, 此时建图会把每个模型都画成「没有可用订阅」: 当作加载中
+  const subsReady = subs.data !== undefined;
 
   const orderedVms = useMemo<VirtualModelDto[]>(
     () =>
@@ -45,26 +67,17 @@ export function VirtualModelsPage() {
       ),
     [vms.data],
   );
+  // 整页一张配色表: 同一模型在所有卡片里同色
+  const colors = useMemo(() => pageModelColors(orderedVms, subsMap), [orderedVms, subsMap]);
 
   return (
     <>
-      <div className="page-actions">
-        <div className="page-header" style={{ marginBottom: 0 }}>
-          <h1>{t("virtualModels.title")}</h1>
-          <div className="subtitle">
-            {t("virtualModels.subtitle1")}
-            <span className="mono" style={{ color: "var(--ink-2)" }}> model-fallback</span>
-            {t("virtualModels.subtitle2")}
-          </div>
-        </div>
-        {/* 手写批注: 指向下方可拖拽排序的订阅行 */}
-        <div className="hand-note" aria-hidden="true">
-          <span>{t("virtualModels.dragHint")}</span>
-          <svg viewBox="0 0 40 40" width="32" height="32">
-            <path d="M6 6 C 22 6, 32 14, 30 32 M23 26 L30 33 L36 25" />
-          </svg>
-        </div>
+      <div className="page-header">
+        <h1>{t("virtualModels.title")}</h1>
+        <div className="subtitle">{t("virtualModels.subtitle")}</div>
       </div>
+
+      <ViewTimeBar at={at} isNow={isNow} onPick={setSelected} onNow={() => setSelected(null)} />
 
       <div className="slot-grid">
         {orderedVms.map((vm) => (
@@ -73,22 +86,58 @@ export function VirtualModelsPage() {
             vm={vm}
             subsMap={subsMap}
             allSubs={subs.data ?? []}
+            at={subsReady ? at : null}
+            isNow={isNow}
+            colors={colors}
           />
         ))}
       </div>
 
+      <RouteLegend />
+
     </>
   );
+}
+
+/** 卡片头部一句话: 所选时刻请求会去哪。 */
+function summaryText(summary: RouteMapData["summary"], t: TFunction): string {
+  switch (summary.kind) {
+    case "none":
+      return t("schedule.map.summary.none");
+    case "first":
+      // fixed 行透传时没有模型名
+      return t("schedule.map.summary.first", {
+        sub: summary.sub ?? "",
+        model: summary.model ?? t("schedule.map.passthrough"),
+      });
+    case "rr":
+      return t("schedule.map.summary.rr", { n: summary.n ?? 0 });
+    case "sticky":
+      return t("schedule.map.summary.sticky", { n: summary.n ?? 0 });
+  }
+}
+
+/** 一周缺口的例子:「周六 08:00–24:00」。 */
+function gapExample(gap: NonNullable<RouteMapData["firstGap"]>, t: TFunction): string {
+  const day = t("schedule.day.one", { d: t(`schedule.wd.${gap.weekday}`) });
+  return `${day} ${hhmm(gap.from * 30)}–${hhmm(gap.to * 30)}`;
 }
 
 function VirtualModelCard({
   vm,
   subsMap,
   allSubs,
+  at,
+  isNow,
+  colors,
 }: {
   vm: VirtualModelDto;
   subsMap: Map<string, SubscriptionDto>;
   allSubs: SubscriptionDto[];
+  /** 所选时刻; null = 宿主机时钟或订阅列表还没取到 (显示加载中) */
+  at: WallClock | null;
+  isNow: boolean;
+  colors: Map<string, ModelColor>;
 }) {
   const { t } = useT();
   const updateMut = useUpdateVirtualModel();
@@ -117,12 +166,26 @@ function VirtualModelCard({
       : vm.mode === "sticky"
         ? t("virtualModels.mode.stickyHint")
         : t("virtualModels.mode.sequentialHint");
-  // fallback 是第 5 个虚拟模型, 语义上与 4 个槽位并列而非同级, 通栏独占一行
+  // fallback 是第 5 个虚拟模型, 语义上与 4 个槽位并列而非同级, 投影换色区分
   const isFallback = vm.name === "model-fallback";
   const jev = isJev(vm.name);
+  // 图数据只算一次: 头部摘要 / 缺口提示与路由图共用
+  const data = useMemo(() => (at ? buildRouteMap(vm, subsMap, at, isNow) : null), [vm, subsMap, at, isNow]);
+  const cardClass = jev ? "slot-card wide jev" : isFallback ? "slot-card wide" : "slot-card";
+  // 还没绑任何订阅是待配置而非故障: 中性提示, 不报红 / 不提 503 缺口
+  const unbound = vm.subscription_ids.length === 0;
+  const summaryTone = !data
+    ? ""
+    : unbound
+      ? "empty"
+      : data.summary.kind === "none"
+        ? "none"
+        : data.summary.kind === "first"
+          ? "first"
+          : "pool";
 
   return (
-    <div className={jev ? "slot-card wide jev" : isFallback ? "slot-card wide" : "slot-card"}>
+    <div className={cardClass}>
       {jev && (
         <div className="jev-hangtag" aria-hidden="true">
           <span className="jev-hangtag-string" />
@@ -132,57 +195,53 @@ function VirtualModelCard({
           </span>
         </div>
       )}
-      <div className="slot-head compact">
+      <div className="slot-head compact vm-card-head">
         <div style={{ minWidth: 0 }}>
           <span className="slot-name">{vm.name}</span>
           <span className="slot-purpose">
             <strong>{t(meta.purposeKey)}</strong> · {t(meta.purposeEnKey)}
           </span>
         </div>
-        <div className="radio-group sm" title={modeHint}>
-          <button
-            className={vm.mode === "sequential" ? "on" : ""}
-            onClick={() => update("sequential", vm.subscription_ids)}
-            type="button"
-          >
-            {t("vm.mode.sequential")}
-          </button>
-          <button
-            className={vm.mode === "round_robin" ? "on" : ""}
-            onClick={() => update("round_robin", vm.subscription_ids)}
-            type="button"
-          >
-            {t("vm.mode.round_robin")}
-          </button>
-          <button
-            className={vm.mode === "sticky" ? "on" : ""}
-            onClick={() => update("sticky", vm.subscription_ids)}
-            type="button"
-          >
-            {t("vm.mode.sticky")}
-          </button>
+        <div className="radio-group sm" role="group" aria-label={t("virtualModels.mode.label")} title={modeHint}>
+          {MODES.map((m) => (
+            <button
+              key={m}
+              className={vm.mode === m ? "on" : ""}
+              aria-pressed={vm.mode === m}
+              onClick={() => update(m, vm.subscription_ids)}
+              type="button"
+            >
+              {t(`vm.mode.${m}`)}
+            </button>
+          ))}
         </div>
+        {data && (
+          <span className={`vm-summary ${summaryTone}`}>
+            {unbound ? t("schedule.map.summary.unbound") : summaryText(data.summary, t)}
+          </span>
+        )}
       </div>
 
-      <div className="slot-body">
-        <SortableSubscriptionList
-          subscriptionIds={vm.subscription_ids}
-          subscriptions={subsMap}
-          slot={slot}
-          vmName={vm.name}
-          onChange={onReorder}
+      {data && !unbound && data.gapHours > 0 && data.firstGap && (
+        <div className="vm-gap">
+          {t("schedule.map.gap", { n: data.gapHours, example: gapExample(data.firstGap, t), vm: vm.name })}
+        </div>
+      )}
+
+      {at && data ? (
+        <VmRouteMap
+          vm={vm}
+          data={data}
+          at={at}
+          colors={colors}
+          onReorder={onReorder}
           onRemove={onRemove}
+          onAdd={() => setPickerOpen(true)}
         />
-
-        <button
-          className="add-endpoint compact"
-          onClick={() => setPickerOpen(true)}
-          type="button"
-        >
-          <Plus size={12} /> {t("virtualModels.addButtonShort")}
-        </button>
-        {jev && <JevAccessHint />}
-      </div>
+      ) : (
+        <div className="field-hint">{t("common.loading")}</div>
+      )}
+      {jev && <JevAccessHint />}
 
       <AddSubscriptionDialog
         open={pickerOpen}
@@ -197,6 +256,27 @@ function VirtualModelCard({
           setPickerOpen(false);
         }}
       />
+    </div>
+  );
+}
+
+/** 页面底部的线条图例 (与 VmRouteMap 的 .vrm-edge 同一套线型)。 */
+function RouteLegend() {
+  const { t } = useT();
+  const items: [string, string][] = [
+    ["first", "schedule.map.legend.first"],
+    ["backup", "schedule.map.legend.backup"],
+    ["join", "schedule.map.legend.join"],
+    ["off", "schedule.map.legend.off"],
+  ];
+  return (
+    <div className="vrm-legend" role="list" aria-label={t("schedule.map.legend.aria")}>
+      {items.map(([tone, key]) => (
+        <span key={tone} className="vrm-legend-item" role="listitem">
+          <span className={`vrm-legend-line ${tone}`} aria-hidden />
+          {t(key)}
+        </span>
+      ))}
     </div>
   );
 }
@@ -235,6 +315,7 @@ function AddSubscriptionDialog({
   onConfirm: (ids: string[]) => void;
 }) {
   const { t, locale } = useT();
+  const clock = useHostClock();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const candidates = allSubs.filter(
@@ -243,10 +324,10 @@ function AddSubscriptionDialog({
 
   const providerName = (sub: SubscriptionDto) =>
     customProviderLabel(sub.provider_id, t) ?? localProviderName(sub, locale);
-  // 与 SortableSubscriptionList 同一套规则: 加进来之后这条订阅在本卡片里实际会用的模型
+  // 与路由图同一套规则: 加进来之后这条订阅在本卡片里此刻实际会用的模型
   const modelFor = (sub: SubscriptionDto) => {
     if (isJev(vmName)) return jevModelOf(sub) ?? t("sortableSub.passthrough");
-    if (slot !== null) return sub.model_slots[slot] || "—";
+    if (slot !== null) return slotNowText(slotNow(sub, slot, clock), t);
     return sub.model_slots.fallback?.trim() || t("sortableSub.passthrough");
   };
 

@@ -4,6 +4,7 @@ icon: google
 category: first_party
 description:
   zh: "Google AI Studio Gemini API, 通过协议翻译适配 Anthropic Messages 接口"
+  zh-Hant: "Google AI Studio Gemini API, 透過協議翻譯適配 Anthropic Messages 介面"
   en: "Google AI Studio Gemini API, adapted to the Anthropic Messages API via protocol translation"
   ja: "Google AI Studio Gemini API。プロトコル変換で Anthropic Messages API に対応"
 homepage: "https://aistudio.google.com"
@@ -13,6 +14,7 @@ api_key_url: "https://aistudio.google.com/app/apikey"
 compatibility: verified
 compatibility_notes:
   zh: "cc-router 内部做 Anthropic Messages ↔ Gemini generateContent 翻译, 强制走 streamGenerateContent + alt=sse, 客户端非流式时由 cc-router 收齐再吐 JSON."
+  zh-Hant: "cc-router 內部做 Anthropic Messages ↔ Gemini generateContent 翻譯, 強制走 streamGenerateContent + alt=sse, 客戶端非串流時由 cc-router 收齊再吐 JSON."
   en: "cc-router translates Anthropic Messages ↔ Gemini generateContent internally and always uses streamGenerateContent + alt=sse; for non-streaming clients, cc-router collects the stream and returns JSON."
   ja: "cc-router が内部で Anthropic Messages ↔ Gemini generateContent を変換します。常に streamGenerateContent + alt=sse を使い、クライアントが非ストリーミングの場合は cc-router がまとめて JSON で返します。"
 
@@ -20,10 +22,12 @@ endpoints:
   - id: ai_studio
     label:
       zh: "Google AI Studio · 官方"
+      zh-Hant: "Google AI Studio · 官方"
       en: "Google AI Studio · Official"
       ja: "Google AI Studio · 公式"
     description:
       zh: "generativelanguage.googleapis.com, 使用 AI Studio 控制台生成的 API Key. URL 模板里的 {model} 占位符由 cc-router 在 dispatch 层按订阅 slot 替换."
+      zh-Hant: "generativelanguage.googleapis.com, 使用 AI Studio 控制台生成的 API Key. URL 範本裡的 {model} 佔位符由 cc-router 在 dispatch 層按訂閱 slot 替換."
       en: "generativelanguage.googleapis.com, using an API key created in the AI Studio console. The {model} placeholder in the URL template is replaced by cc-router with the subscription's slot model."
       ja: "generativelanguage.googleapis.com。AI Studio コンソールで発行した API Key を使用します。URL テンプレートの {model} プレースホルダーは cc-router がサブスクリプションのスロットのモデルに置き換えます。"
     base_url: "https://generativelanguage.googleapis.com"

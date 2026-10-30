@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">中文</a> · <strong>English</strong> · <a href="README.ja.md">日本語</a>
+  <a href="README.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <strong>English</strong> · <a href="README.ja.md">日本語</a>
 </p>
 
 <p align="center">
@@ -67,7 +67,7 @@ Highlights:
 - **Three outbound protocols, every subscription in one router** — 24 built-in provider presets (DeepSeek, Qwen, Kimi, MiMo, MiniMax, GLM, Claude, OpenAI, Gemini, …), plus any Anthropic / OpenAI / Gemini-compatible endpoint you bring yourself
 - **Pool every token you have** — sequential / round-robin / session-affinity dispatch with automatic switching and failover
 - **Usage receipts** — export your token usage as a "supermarket receipt" in one click, handy for sharing or keeping records
-- **Fully translated UI** — 简体中文 / English / 日本語, follows your system locale or pick manually in Settings
+- **Fully translated UI** — 简体中文 / 繁體中文 / English / 日本語, follows your system locale or pick manually in Settings
 - **Desktop, web and terminal UIs** — besides the desktop GUI, open the exact same management UI in a browser via the [Web UI](#web-ui-optional-off-by-default), or use the [terminal UI (TUI)](#terminal-ui-optional-off-by-default) to manage subscriptions and watch live routing and request logs from the command line
 - **Virtual model aliases** — each of fable / opus / sonnet / haiku accepts multiple names; for opus that's `model-opus` / `claude-opus-4-7` / `anthropic/model-opus` / `anthropic/claude-opus-4-7`, all routed to the same virtual model — pick whatever naming your tool prefers
 - **Local HTTPS** — generate a self-signed CA and server cert in one click so HTTPS-only clients can talk to cc-router too; see the [setup guide](https://ccrouter.app/docs/claude-desktop-integration/)

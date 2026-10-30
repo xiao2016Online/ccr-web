@@ -13,6 +13,7 @@ category: first_party
 icon: cloudflare
 description:
   zh: "Cloudflare 的 Clef 决策模型 (System One), 只用于 model-jev"
+  zh-Hant: "Cloudflare 的 Clef 決策模型 (System One), 只用於 model-jev"
   en: "Cloudflare's Clef decision models (System One), for model-jev only"
   ja: "Cloudflare の Clef 意思決定モデル（System One）。model-jev 専用"
 homepage: "https://developers.cloudflare.com/workers-ai/models/clef/"
@@ -24,6 +25,10 @@ compatibility_notes:
     1. Clef 不生成文本, 不能给 Claude Code 对话用; 订阅只能绑定到 model-jev, 经 POST /v1/systemone 调用.
     2. 模型: clef-flash (9B, 便宜) 或 clef (27B). 与 Jev 请求格式兼容, 但不支持 stream.
     3. API Token 需要 Workers AI 权限; 经 AI Gateway 时还需要 AI Gateway 权限.
+  zh-Hant: |
+    1. Clef 不生成文字, 不能給 Claude Code 對話用; 訂閱只能綁定到 model-jev, 經 POST /v1/systemone 呼叫.
+    2. 模型: clef-flash (9B, 便宜) 或 clef (27B). 與 Jev 請求格式相容, 但不支援 stream.
+    3. API Token 需要 Workers AI 權限; 經 AI Gateway 時還需要 AI Gateway 權限.
   en: |
     1. Clef does not generate text and cannot be used for Claude Code chat; subscriptions can only be bound
        to model-jev and are called through POST /v1/systemone.
@@ -37,18 +42,19 @@ compatibility_notes:
 
 url_params:
   - id: account_id
-    label: {zh: "账户 ID", en: "Account ID", ja: "アカウント ID"}
-    placeholder: {zh: "32 位十六进制", en: "32 hex characters", ja: "16 進数 32 文字"}
+    label: {zh: "账户 ID", zh-Hant: "帳戶 ID", en: "Account ID", ja: "アカウント ID"}
+    placeholder: {zh: "32 位十六进制", zh-Hant: "32 位十六進位", en: "32 hex characters", ja: "16 進数 32 文字"}
     pattern: "^[0-9a-f]{32}$"
   - id: gateway_id
-    label: {zh: "网关 ID", en: "Gateway ID", ja: "ゲートウェイ ID"}
-    placeholder: {zh: "在 AI Gateway 控制台创建的网关名", en: "Gateway name created in the AI Gateway dashboard", ja: "AI Gateway ダッシュボードで作成したゲートウェイ名"}
+    label: {zh: "网关 ID", zh-Hant: "閘道 ID", en: "Gateway ID", ja: "ゲートウェイ ID"}
+    placeholder: {zh: "在 AI Gateway 控制台创建的网关名", zh-Hant: "在 AI Gateway 控制台建立的閘道名", en: "Gateway name created in the AI Gateway dashboard", ja: "AI Gateway ダッシュボードで作成したゲートウェイ名"}
     pattern: "^[A-Za-z0-9_-]{1,64}$"
 
 endpoints:
   - id: direct
     label:
       zh: "直连 · System One"
+      zh-Hant: "直連 · System One"
       en: "Direct · System One"
       ja: "直接接続 · System One"
     base_url: "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai"
@@ -60,6 +66,7 @@ endpoints:
   - id: gateway
     label:
       zh: "经 AI Gateway · System One"
+      zh-Hant: "經 AI Gateway · System One"
       en: "Through AI Gateway · System One"
       ja: "AI Gateway 経由 · System One"
     base_url: "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai"

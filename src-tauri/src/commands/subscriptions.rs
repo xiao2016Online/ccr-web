@@ -23,6 +23,7 @@ use crate::subscription::{
     },
     model_discovery, ping,
     quota::TokenQuotas,
+    schedule::{validate_slot_schedules, SlotSchedules, WallClock},
     state_machine, store,
 };
 
@@ -373,6 +374,7 @@ pub async fn create_subscription(
                 oauth_metadata: OAuthMetadata::default(),
                 model_slots: input.model_slots,
                 slot_efforts: SlotEfforts::default(),
+                slot_schedules: Default::default(),
                 token_quotas: TokenQuotas::default(),
                 enabled: true,
                 is_auth_failed: false,
@@ -435,6 +437,7 @@ pub async fn create_subscription(
                 oauth_metadata: OAuthMetadata::default(),
                 model_slots,
                 slot_efforts: SlotEfforts::default(),
+                slot_schedules: Default::default(),
                 token_quotas: TokenQuotas::default(),
                 enabled: true,
                 is_auth_failed: false,
@@ -729,7 +732,9 @@ pub async fn test_connection(
         g.row.clone()
     };
 
-    let (model, slot) = match ping::pick_test_model(&row) {
+    // 选模型与带的思考强度用同一时刻, 不会一个按半点前、一个按半点后
+    let clock = crate::subscription::schedule::WallClock::now();
+    let (model, slot) = match ping::pick_test_model_at(&row, clock) {
         Some(m) => m,
         None => {
             let note = ping::ProbeNote::NoTestModel;
@@ -744,7 +749,7 @@ pub async fn test_connection(
         }
     };
 
-    let result = ping::probe_subscription(&state, &row, &model, slot).await;
+    let result = ping::probe_subscription(&state, &row, &model, slot, clock).await;
 
     let mut state_reset = false;
     if result.ok {
@@ -1112,6 +1117,66 @@ pub async fn update_token_quotas(
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
+
+/// Shared by `update_slot_schedules` and backup import so both reject the same rows. Takes the
+/// narrowest inputs both callers have (import works on an export struct, not a `SubscriptionRow`).
+/// System One is checked first: its subscriptions have no slot-to-model mapping to schedule.
+pub(crate) fn check_schedules_for(
+    endpoint_protocol: EndpointProtocol,
+    s: &SlotSchedules,
+) -> AppResult<()> {
+    if endpoint_protocol == EndpointProtocol::Systemone && !s.is_empty() {
+        return Err(AppError::BadRequest("System One 订阅不支持分时段".into()));
+    }
+    validate_slot_schedules(s).map_err(AppError::BadRequest)
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn update_slot_schedules(
+    state: State<'_, AppState>,
+    id: String,
+    schedules: SlotSchedules,
+) -> AppResult<SubscriptionDto> {
+    let id = Uuid::parse_str(&id).map_err(|_| AppError::BadRequest("无效 id".into()))?;
+    let rt = state
+        .get_subscription(&id)
+        .await
+        .ok_or_else(|| AppError::SubscriptionNotFound(id.to_string()))?;
+    let row_snapshot = {
+        let mut g = rt.write().await;
+        check_schedules_for(g.row.endpoint_protocol, &schedules)?;
+        g.row.slot_schedules = schedules;
+        g.row.updated_at = Utc::now();
+        g.row.clone()
+    };
+    store::update_row(&state.db, &row_snapshot).await?;
+    let referenced_by = referenced_by_names(&state, &id).await;
+    let guard = rt.read().await;
+    Ok(SubscriptionDto::from_runtime(&guard, referenced_by, &state.providers))
+}
+
+/// The host machine's local wall clock, as the scheduler sees it. The web UI / TUI may run on
+/// another machine, so they ask the host instead of reading their own clock.
+#[derive(Debug, Serialize)]
+pub struct HostClockDto {
+    /// 1 = Monday .. 7 = Sunday.
+    pub weekday: u8,
+    /// Minutes since local midnight, 0..1440.
+    pub minute: u16,
+    pub epoch_ms: i64,
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn get_host_clock() -> AppResult<HostClockDto> {
+    let now = WallClock::now();
+    Ok(HostClockDto {
+        weekday: now.weekday,
+        minute: now.minute,
+        epoch_ms: Utc::now().timestamp_millis(),
+    })
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn reset_total_quota_usage(
     state: State<'_, AppState>,
     id: String,
@@ -1327,5 +1392,41 @@ mod protocol_tests {
         assert!(protocol_switch_rejection(Systemone, Systemone).is_none());
         assert!(protocol_switch_rejection(Messages, Systemone).is_some());
         assert!(protocol_switch_rejection(Systemone, Messages).is_some());
+    }
+
+    fn rule(start: &str) -> crate::subscription::schedule::ScheduleRule {
+        crate::subscription::schedule::ScheduleRule {
+            days: vec![1],
+            start: start.into(),
+            end: "09:00".into(),
+            model: "m".into(),
+            effort: None,
+        }
+    }
+
+    #[test]
+    fn schedules_are_rejected_for_systemone_but_empty_is_fine() {
+        let mut s = SlotSchedules::default();
+        assert!(check_schedules_for(EndpointProtocol::Systemone, &s).is_ok());
+        s.opus = vec![rule("08:00")];
+        let err = check_schedules_for(EndpointProtocol::Systemone, &s).unwrap_err();
+        assert!(err.to_string().contains("System One"), "{err}");
+        assert!(check_schedules_for(EndpointProtocol::Messages, &s).is_ok());
+    }
+
+    #[test]
+    fn schedules_with_bad_time_are_rejected_for_normal_rows() {
+        let mut s = SlotSchedules::default();
+        s.opus = vec![rule("08:15")];
+        let err = check_schedules_for(EndpointProtocol::Messages, &s).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)), "{err}");
+    }
+
+    #[test]
+    fn systemone_check_runs_before_rule_validation() {
+        let mut s = SlotSchedules::default();
+        s.opus = vec![rule("08:15")];
+        let err = check_schedules_for(EndpointProtocol::Systemone, &s).unwrap_err();
+        assert!(err.to_string().contains("System One"), "{err}");
     }
 }

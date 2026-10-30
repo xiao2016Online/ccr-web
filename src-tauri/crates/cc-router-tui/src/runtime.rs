@@ -1139,6 +1139,7 @@ mod tests {
                 "auth": {"type": "api_key"},
                 "model_discovery": {"enabled": true, "example_models": ["glm-4.6"]},
                 "translations": {
+                    "zh-Hant": {"display_name": "智譜 GLM", "description": null, "endpoints": {"default": {"label": "預設"}}},
                     "en": {"display_name": "Zhipu GLM", "description": null, "endpoints": {"default": {"label": "Default"}}},
                     "ja": {"display_name": "Zhipu GLM", "description": null, "endpoints": {"default": {"label": "デフォルト"}}},
                 },

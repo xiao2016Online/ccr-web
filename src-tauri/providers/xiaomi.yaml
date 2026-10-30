@@ -1,12 +1,14 @@
 id: xiaomi
 display_name:
   zh: "小米 MiMo"
+  zh-Hant: "小米 MiMo"
   en: "Xiaomi MiMo"
   ja: "Xiaomi MiMo"
 icon: xiaomi
 category: first_party
 description:
   zh: "小米 MiMo 开放平台 · 按量付费 + Token Plan 订阅（Anthropic 兼容）"
+  zh-Hant: "小米 MiMo 開放平台 · 按量計費 + Token Plan 訂閱（Anthropic 相容）"
   en: "Xiaomi MiMo open platform · pay-as-you-go + Token Plan subscription (Anthropic-compatible)"
   ja: "Xiaomi MiMo オープンプラットフォーム · 従量課金 + Token Plan サブスクリプション（Anthropic 互換）"
 homepage: "https://platform.xiaomimimo.com"
@@ -20,10 +22,12 @@ endpoints:
   - id: token_plan_cn
     label:
       zh: "国内版 · Token Plan · 中国集群"
+      zh-Hant: "中國版 · Token Plan · 中國叢集"
       en: "China · Token Plan · China cluster"
       ja: "中国版 · Token Plan · 中国クラスタ"
     description:
       zh: "订阅制, 中国大陆低延迟"
+      zh-Hant: "訂閱制, 中國大陸低延遲"
       en: "Subscription-based, low latency in mainland China"
       ja: "サブスクリプション制。中国本土で低遅延"
     base_url: "https://token-plan-cn.xiaomimimo.com/anthropic"
@@ -34,10 +38,12 @@ endpoints:
   - id: paygo
     label:
       zh: "按量付费 API"
+      zh-Hant: "按量計費 API"
       en: "Pay-as-you-go API"
       ja: "従量課金 API"
     description:
       zh: "按 token 计费, 最通用的端点"
+      zh-Hant: "按 token 計費, 最通用的端點"
       en: "Billed per token; the most general-purpose endpoint"
       ja: "トークン従量課金。最も汎用的なエンドポイント"
     base_url: "https://api.xiaomimimo.com/anthropic"
@@ -48,10 +54,12 @@ endpoints:
   - id: token_plan_sgp
     label:
       zh: "国际版 · Token Plan · 新加坡集群"
+      zh-Hant: "國際版 · Token Plan · 新加坡叢集"
       en: "International · Token Plan · Singapore cluster"
       ja: "国際版 · Token Plan · シンガポールクラスタ"
     description:
       zh: "订阅制, 亚太用户推荐"
+      zh-Hant: "訂閱制, 亞太使用者推薦"
       en: "Subscription-based, recommended for Asia-Pacific users"
       ja: "サブスクリプション制。アジア太平洋のユーザーにおすすめ"
     base_url: "https://token-plan-sgp.xiaomimimo.com/anthropic"
@@ -62,10 +70,12 @@ endpoints:
   - id: token_plan_ams
     label:
       zh: "欧洲 · Token Plan · 欧洲集群"
+      zh-Hant: "歐洲 · Token Plan · 歐洲叢集"
       en: "Europe · Token Plan · Europe cluster"
       ja: "ヨーロッパ · Token Plan · ヨーロッパクラスタ"
     description:
       zh: "订阅制, 欧洲用户推荐"
+      zh-Hant: "訂閱制, 歐洲使用者推薦"
       en: "Subscription-based, recommended for users in Europe"
       ja: "サブスクリプション制。ヨーロッパのユーザーにおすすめ"
     base_url: "https://token-plan-ams.xiaomimimo.com/anthropic"

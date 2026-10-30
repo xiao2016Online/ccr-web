@@ -97,6 +97,16 @@ impl VirtualModelName {
         }
     }
 
+    /// The subscription slot this virtual model really reads, or `None` for fallback / jev
+    /// (they have no four-slot mapping). Unlike [`Self::slot`], safe for time-schedule filtering
+    /// and model rewriting.
+    pub fn four_slot(self) -> Option<SubscriptionSlot> {
+        match self {
+            VirtualModelName::Fallback | VirtualModelName::Jev => None,
+            other => Some(other.slot()),
+        }
+    }
+
     pub fn is_fallback(self) -> bool {
         matches!(self, VirtualModelName::Fallback)
     }
@@ -172,6 +182,16 @@ pub struct VirtualModelConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn four_slot_is_none_for_fallback_and_jev() {
+        assert_eq!(VirtualModelName::Fable.four_slot(), Some(SubscriptionSlot::Fable));
+        assert_eq!(VirtualModelName::Opus.four_slot(), Some(SubscriptionSlot::Opus));
+        assert_eq!(VirtualModelName::Sonnet.four_slot(), Some(SubscriptionSlot::Sonnet));
+        assert_eq!(VirtualModelName::Haiku.four_slot(), Some(SubscriptionSlot::Haiku));
+        assert_eq!(VirtualModelName::Fallback.four_slot(), None);
+        assert_eq!(VirtualModelName::Jev.four_slot(), None);
+    }
 
     #[test]
     fn parse_strips_anthropic_prefix() {

@@ -13,12 +13,12 @@ use cc_router_tui::client::dto::{
     AuthHeaderFormat, BalanceCache, BalanceEntry, BalanceSeverity, BalanceSnapshot, CreateInput, CreateSource, CreatedSubscription,
     CustomProtocol, CustomSource, ModelCache, ModelDiscovery, ModelInfo, ModelSlots, OverallStats, ProbeInput, ProbeModelsResult, Provider,
     ProviderAuth, ProviderEndpoint, ProviderText, ProviderTranslations, ProxyStatus, UrlParam, QuotaPeriod, QuotaUsage, RefreshBalanceResult, RefreshModelsResult, RequestFilters,
-    RequestLog, RequestPage, RequestQuery, RequestStatus, RoutingMode, SeriesPoint, Settings, SlotEfforts, Subscription, SubscriptionState,
-    TestConnectionResult, VirtualModel, EFFORT_CHOICES,
+    RequestLog, RequestPage, RequestQuery, RequestStatus, RoutingMode, SeriesPoint, Settings, SlotEfforts, SlotModelsNow, SlotScheduleCounts,
+    Subscription, SubscriptionState, TestConnectionResult, VirtualModel, EFFORT_CHOICES,
 };
 use cc_router_tui::client::events::{ROUTE_ATTEMPT_FINISHED, ROUTE_ATTEMPT_STARTED};
 use cc_router_tui::format::{fit, Tz};
-use cc_router_tui::i18n::{strings, Lang, Strings, EN, JA, ZH};
+use cc_router_tui::i18n::{strings, Lang, Strings, EN, JA, ZH, ZH_HANT};
 use cc_router_tui::pages::Pages;
 use cc_router_tui::secret::Secret;
 use cc_router_tui::theme::{ColorMode, Theme};
@@ -88,6 +88,8 @@ fn sub(id: &str, name: &str, state: SubscriptionState) -> Subscription {
         endpoint_protocol: "messages".into(),
         model_slots: ModelSlots { fable: "d".into(), opus: "a".into(), sonnet: "b".into(), haiku: "c".into(), fallback: String::new(), jev: String::new() },
         slot_efforts: Default::default(),
+        slot_models_now: Default::default(),
+        slot_schedules: Default::default(),
         referenced_by: vec![],
         balance_supported: false,
         balance_cache: None,
@@ -398,7 +400,7 @@ fn zhipu_provider() -> Provider {
         auth: ProviderAuth { auth_type: "api_key".into() },
         model_discovery: ModelDiscovery { enabled: true, example_models: vec!["glm-4-plus".into(), "glm-4.5-flash".into()] },
         // 向导收到的是 runtime 已经按界面语言换好的列表 (`Provider::localized`), 这里的译文不会上屏。
-        translations: ProviderTranslations { en: provider_text("Zhipu AI"), ja: provider_text("Zhipu AI") },
+        translations: ProviderTranslations { zh_hant: Some(provider_text("Zhipu AI")), en: provider_text("Zhipu AI"), ja: provider_text("Zhipu AI") },
         url_params: vec![],
     }
 }
@@ -417,7 +419,7 @@ fn chatgpt_provider() -> Provider {
         default_endpoint: None,
         auth: ProviderAuth { auth_type: "chatgpt_oauth".into() },
         model_discovery: ModelDiscovery { enabled: false, example_models: vec![] },
-        translations: ProviderTranslations { en: provider_text("ChatGPT"), ja: provider_text("ChatGPT") },
+        translations: ProviderTranslations { zh_hant: Some(provider_text("ChatGPT")), en: provider_text("ChatGPT"), ja: provider_text("ChatGPT") },
         url_params: vec![],
     }
 }
@@ -655,7 +657,7 @@ fn cloudflare_provider() -> Provider {
         default_endpoint: Some("direct".into()),
         auth: ProviderAuth { auth_type: "openai_chat_completions_api_key".into() },
         model_discovery: ModelDiscovery { enabled: true, example_models: vec![] },
-        translations: ProviderTranslations { en: provider_text("Cloudflare"), ja: provider_text("Cloudflare") },
+        translations: ProviderTranslations { zh_hant: Some(provider_text("Cloudflare")), en: provider_text("Cloudflare"), ja: provider_text("Cloudflare") },
         url_params: vec![
             UrlParam { id: "account_id".into(), label: "账户 ID".into(), placeholder: None, pattern: "^[0-9a-f]{32}$".into() },
             UrlParam { id: "gateway_id".into(), label: "网关 ID".into(), placeholder: None, pattern: "^[A-Za-z0-9_-]{1,64}$".into() },
@@ -1866,6 +1868,59 @@ fn custom_stage_escape_uses_the_discard_prompt_not_the_pending_one() {
 #[test]
 fn subscriptions_120x40() {
     insta::assert_snapshot!(render(&mut subs_app(false), 120, 40));
+}
+
+/// 分时段订阅: 列表 sonnet 列与详情槽位行读后端算好的 `slot_models_now`, 配了规则的槽位带
+/// 「分时段」标记, 此刻没有模型时显示「此时段不可用」。没配规则的槽位 (fable) 一切如旧。
+fn scheduled_subs() -> Vec<Subscription> {
+    let one_rule = || vec![serde::de::IgnoredAny];
+    let mut night = sub("1", "夜间折扣号", SubscriptionState::Healthy);
+    night.model_slots =
+        ModelSlots { fable: "glm-4.6".into(), opus: "glm-4.6".into(), sonnet: String::new(), haiku: "glm-4.5-air".into(), fallback: String::new(), jev: String::new() };
+    night.slot_schedules = SlotScheduleCounts { opus: one_rule(), sonnet: one_rule(), haiku: one_rule(), ..Default::default() };
+    night.slot_models_now = SlotModelsNow { opus: Some("glm-4.6-night".into()), sonnet: None, haiku: Some("glm-4.5-air".into()), ..Default::default() };
+
+    let mut day = sub("2", "白天主号", SubscriptionState::Healthy);
+    day.slot_schedules = SlotScheduleCounts { sonnet: one_rule(), ..Default::default() };
+    day.slot_models_now = SlotModelsNow { sonnet: Some("b-peak".into()), ..Default::default() };
+    vec![night, day]
+}
+
+fn scheduled_app() -> App {
+    let mut a = app(false);
+    a.update(Action::Connected { app_version: VERSION.into() });
+    a.update(Action::SwitchTab(Tab::Subscriptions));
+    a.update(subs_done(1, scheduled_subs()));
+    a
+}
+
+#[test]
+fn subscriptions_scheduled_120x40() {
+    insta::assert_snapshot!(render(&mut scheduled_app(), 120, 40));
+}
+
+#[test]
+fn subscriptions_scheduled_80x24() {
+    let mut a = scheduled_app();
+    render(&mut a, 80, 24);
+    a.handle_key(key(KeyCode::Enter));
+    insta::assert_snapshot!(render(&mut a, 80, 24));
+}
+
+/// 四种语言下「分时段」标记与「此时段不可用」都完整显示在详情里 (不被列宽截断)。
+#[test]
+fn scheduled_markers_are_fully_shown_in_every_language() {
+    for lang in Lang::ALL {
+        use_lang(lang);
+        let mut a = scheduled_app();
+        render(&mut a, 120, 40);
+        a.handle_key(key(KeyCode::Enter));
+        let out = render(&mut a, 120, 40);
+        let st = s();
+        assert!(out.contains(st.slot_scheduled), "{lang:?}: 缺少「{}」\n{out}", st.slot_scheduled);
+        assert!(out.contains(st.slot_unavailable_now), "{lang:?}: 缺少「{}」\n{out}", st.slot_unavailable_now);
+    }
+    use_lang(Lang::Zh);
 }
 
 #[test]
@@ -6478,6 +6533,78 @@ fn ja_virtual_models_80x24() {
     }
     let out = render(&mut a, 80, 24);
     assert!(out.contains(JA.vm_will_skip), "「スキップ対象」应该完整显示\n{out}");
+    insta::assert_snapshot!(out);
+}
+
+// ---------- 繁中界面 ----------
+
+#[test]
+fn zh_hant_overview_80x24() {
+    use_lang(Lang::ZhHant);
+    insta::assert_snapshot!(render(&mut loaded(false), 80, 24));
+}
+
+#[test]
+fn zh_hant_subscriptions_120x40() {
+    use_lang(Lang::ZhHant);
+    insta::assert_snapshot!(render(&mut subs_app(false), 120, 40));
+}
+
+#[test]
+fn zh_hant_wizard_custom_80x24() {
+    use_lang(Lang::ZhHant);
+    insta::assert_snapshot!(render(&mut custom_wizard_probed_and_filled(), 80, 24));
+}
+
+#[test]
+fn zh_hant_delete_confirm_80x24() {
+    use_lang(Lang::ZhHant);
+    let mut a = subs_app(false);
+    render(&mut a, 80, 24);
+    let action = a.handle_key(key(KeyCode::Char('d'))).expect("应该产出确认弹窗");
+    a.update(action);
+    insta::assert_snapshot!(render(&mut a, 80, 24));
+}
+
+#[test]
+fn zh_hant_help_subscriptions_80x24() {
+    use_lang(Lang::ZhHant);
+    let mut a = subs_app(false);
+    a.update(Action::ToggleHelp);
+    insta::assert_snapshot!(render(&mut a, 80, 24));
+}
+
+#[test]
+fn zh_hant_logs_120x40() {
+    use_lang(Lang::ZhHant);
+    let mut a = logs_app(false);
+    a.update(requests_done(1, RequestQuery::default(), logs_fixture_rows(), 4));
+    insta::assert_snapshot!(render(&mut a, 120, 40));
+}
+
+#[test]
+fn zh_hant_live_80x24() {
+    use_lang(Lang::ZhHant);
+    insta::assert_snapshot!(render(&mut live_fixture_app(false), 80, 24));
+}
+
+#[test]
+fn zh_hant_wizard_slots_80x24() {
+    use_lang(Lang::ZhHant);
+    let mut a = wizard_at_slots(vec![ModelInfo { id: "glm-4.6".into(), display_name: None }]);
+    insta::assert_snapshot!(render(&mut a, 80, 24));
+}
+
+/// 繁中虚拟模型页, 选中 `model-fallback` (同日文那张): 「將略過」类提示与右栏底部摘要完整显示。
+#[test]
+fn zh_hant_virtual_models_80x24() {
+    use_lang(Lang::ZhHant);
+    let mut a = vm_app(false);
+    for _ in 0..4 {
+        a.handle_key(key(KeyCode::Down));
+    }
+    let out = render(&mut a, 80, 24);
+    assert!(out.contains(ZH_HANT.vm_will_skip), "「{}」应该完整显示\n{out}", ZH_HANT.vm_will_skip);
     insta::assert_snapshot!(out);
 }
 

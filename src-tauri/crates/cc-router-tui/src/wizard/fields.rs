@@ -442,6 +442,8 @@ mod tests {
                 endpoint_protocol: "messages".into(),
                 model_slots: crate::client::dto::ModelSlots::pending(),
                 slot_efforts: Default::default(),
+                slot_models_now: Default::default(),
+                slot_schedules: Default::default(),
                 referenced_by: vec![],
                 balance_supported: false,
                 balance_cache: None,
@@ -656,7 +658,7 @@ mod url_param_tests {
             default_endpoint: Some("direct".into()),
             auth: ProviderAuth { auth_type: "openai_chat_completions_api_key".into() },
             model_discovery: ModelDiscovery { enabled: true, example_models: vec![] },
-            translations: ProviderTranslations { en: text(), ja: text() },
+            translations: ProviderTranslations { zh_hant: Some(text()), en: text(), ja: text() },
             url_params: vec![
                 UrlParam { id: "account_id".into(), label: "Account ID".into(), placeholder: None, pattern: "^[0-9a-f]{32}$".into() },
                 UrlParam { id: "gateway_id".into(), label: "Gateway ID".into(), placeholder: None, pattern: "^[A-Za-z0-9_-]{1,64}$".into() },

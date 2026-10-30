@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ArrowLeft, TriangleAlert, LoaderCircle } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { runtime } from "@/runtime";
@@ -23,11 +23,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProviderIcon } from "@/components/ProviderIcon";
-import { ModelSlotPicker } from "@/components/ModelSlotPicker";
-import { SubscriptionBalanceCard } from "@/components/SubscriptionBalanceCard";
+import {
+  ModelListModeBar,
+  ModelSlotPicker,
+  useModelListMode,
+} from "@/components/ModelSlotPicker";
+import { SlotScheduleEditor } from "@/components/schedule/SlotScheduleEditor";
+import { SubscriptionBalancePanel } from "@/components/SubscriptionBalanceCard";
 import { SubscriptionQuotaCard } from "@/components/SubscriptionQuotaCard";
 import { api } from "@/api/tauri";
 import { KeyValueEditor, type KeyValueRow } from "@/components/KeyValueEditor";
@@ -38,25 +43,23 @@ import {
   useSetSubscriptionEnabled,
   useUpdateSubscription,
   useUpdateSubscriptionKey,
-  useUpdateTokenQuotas,
 } from "@/hooks/useSubscriptions";
 import { useT } from "@/i18n";
 import type {
   AuthHeaderFormat,
   ModelInfo,
   ModelSlots,
-  QuotaPeriod,
   RefreshModelListResult,
   SlotEfforts,
+  SlotSchedules,
   SubscriptionPatch,
   TestConnectionResult,
-  TokenQuotas,
 } from "@/types";
-import { uniformSlots } from "@/lib/modelSlots";
+import { MODEL_SLOT_KEYS, parseSlotParam, uniformSlots } from "@/lib/modelSlots";
+import { normalizeSchedules, schedulesEqual, validateRules } from "@/lib/slotSchedule";
 import { lastErrorText, testResultText } from "@/lib/backendText";
 import { providerName } from "@/lib/providerText";
 import { UrlParamFields, urlParamErrors } from "@/components/UrlParamFields";
-import { formatTokenShorthand, parseTokenShorthand } from "@/lib/quota";
 import { errorText } from "@/lib/errorText";
 
 export function SubscriptionEditPage() {
@@ -64,6 +67,9 @@ export function SubscriptionEditPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  // 虚拟模型页「编辑槽位」带 ?slot=<槽位>, 打开时停在那个槽位的标签上
+  const [searchParams] = useSearchParams();
+  const initialSlot = parseSlotParam(searchParams.get("slot")) ?? undefined;
 
   const subQuery = useQuery({
     queryKey: ["subscription", id],
@@ -72,7 +78,6 @@ export function SubscriptionEditPage() {
   });
   const providers = useProviders();
   const updateMut = useUpdateSubscription();
-  const updateQuotasMut = useUpdateTokenQuotas();
   const deleteMut = useDeleteSubscription();
   const enabledMut = useSetSubscriptionEnabled();
   const updateKeyMut = useUpdateSubscriptionKey();
@@ -92,13 +97,7 @@ export function SubscriptionEditPage() {
   const [displayName, setDisplayName] = useState<string>("");
   const [slots, setSlots] = useState<ModelSlots>(uniformSlots(""));
   const [slotEfforts, setSlotEfforts] = useState<SlotEfforts>({});
-  const [quotaInputs, setQuotaInputs] = useState<Record<QuotaPeriod, string>>({
-    daily: "",
-    weekly: "",
-    monthly: "",
-    total: "",
-  });
-  const [quotaError, setQuotaError] = useState<string | null>(null);
+  const [schedules, setSchedules] = useState<SlotSchedules>({});
 
   // 自定义订阅可编辑的连接字段
   const [baseUrl, setBaseUrl] = useState<string>("");
@@ -112,11 +111,16 @@ export function SubscriptionEditPage() {
   const [models, setModels] = useState<ModelInfo[] | null>(null);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  /** 模型列表的自动 / 手动, 开关在槽位卡片右上角 (手动时分时段编辑也用文本输入) */
+  const [modelMode, chooseModelMode] = useModelListMode(models, modelError);
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
   const [keyDialog, setKeyDialog] = useState(false);
   const [newKey, setNewKey] = useState("");
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** 时段规则与槽位分两次提交, updateMut.isPending 盖不住规则那一段 */
+  const [saving, setSaving] = useState(false);
+  const modelIds = useMemo(() => (models ?? []).map((m) => m.id), [models]);
 
   useEffect(() => {
     if (subQuery.data) {
@@ -126,14 +130,7 @@ export function SubscriptionEditPage() {
       setDisplayName(subQuery.data.display_name);
       setSlots(subQuery.data.model_slots);
       setSlotEfforts(subQuery.data.slot_efforts ?? {});
-      const q = subQuery.data.token_quotas ?? {};
-      setQuotaInputs({
-        daily: formatTokenShorthand(q.daily),
-        weekly: formatTokenShorthand(q.weekly),
-        monthly: formatTokenShorthand(q.monthly),
-        total: formatTokenShorthand(q.total),
-      });
-      setQuotaError(null);
+      setSchedules(subQuery.data.slot_schedules ?? {});
       setBaseUrl(subQuery.data.base_url);
       setMessagesPath(subQuery.data.messages_path);
       setAuthHeaderName(subQuery.data.auth_header_name);
@@ -180,6 +177,13 @@ export function SubscriptionEditPage() {
     if (sub.is_user_defined && sub.endpoint_protocol === "systemone" && !slots.jev?.trim()) {
       return setSaveError(t("subscriptionNew.errFillJevModel"));
     }
+    // 时段规则先整体校验: 任一不过就什么都不发 (与后端 validate_slot_schedules 同规则)
+    if (!isSystemOne) {
+      for (const k of MODEL_SLOT_KEYS) {
+        const errKey = validateRules(schedules[k] ?? []);
+        if (errKey) return setSaveError(t("schedule.edit.saveInvalid", { slot: `model-${k}`, msg: t(errKey) }));
+      }
+    }
     const patch: SubscriptionPatch = {
       display_name: displayName,
       model_slots: slots,
@@ -223,26 +227,20 @@ export function SubscriptionEditPage() {
         patch.endpoint_id = endpointId;
       }
     }
+    setSaving(true);
     try {
+      // 规则独立成列, 有改动才提交 (systemone 订阅后端拒绝规则); 先于默认模型提交:
+      // 反过来时第二步失败会留下「默认已清空、规则没存上」的空槽 (此后不会被调用)
+      if (!isSystemOne && !schedulesEqual(schedules, sub.slot_schedules ?? {})) {
+        await api.updateSlotSchedules(id, normalizeSchedules(schedules));
+        queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
+        queryClient.invalidateQueries({ queryKey: ["subscription", id] });
+      }
       await updateMut.mutateAsync({ id, patch });
     } catch (e) {
       setSaveError(`${t("subscriptionEdit.errSave")}: ${errorText(e)}`);
-    }
-  }
-
-  async function saveQuotas() {
-    if (!id) return;
-    setQuotaError(null);
-    const out: TokenQuotas = {};
-    for (const p of ["daily", "weekly", "monthly", "total"] as QuotaPeriod[]) {
-      const v = parseTokenShorthand(quotaInputs[p]);
-      if (v === null) return setQuotaError(t("quota.invalid"));
-      if (v !== undefined) out[p] = v;
-    }
-    try {
-      await updateQuotasMut.mutateAsync({ id, quotas: out });
-    } catch (e) {
-      setQuotaError(errorText(e));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -332,165 +330,207 @@ export function SubscriptionEditPage() {
               <CardHeader>
                 <CardTitle>{t("subscriptionEdit.basicInfo")}</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                  <Label>{t("subscriptionNew.field.provider")}</Label>
-                  {isCustom ? (
-                    <Input
-                      value={providerDisplayName}
-                      onChange={(e) => setProviderDisplayName(e.target.value)}
-                      placeholder={t("subscriptionEdit.providerNamePh")}
-                    />
-                  ) : (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <ProviderIcon iconId={sub.provider_icon} size={18} />
-                      <span>{providerName(sub, locale)}{t("subscriptionEdit.providerLocked")}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* 内置订阅: endpoint 切换下拉 */}
-                {!isCustom && (
-                  <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
-                    <Label className="mt-2">{t("subscriptionNew.field.endpoint")}</Label>
-                    <div className="space-y-1 min-w-0">
-                      <Select value={endpointId} onValueChange={setEndpointId}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {provider?.endpoints.filter((e) => e.protocol === sub.endpoint_protocol).map((e) => (
-                            <SelectItem key={e.id} value={e.id} subtitle={e.base_url}>
-                              {e.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="font-mono text-[10px] text-muted-foreground break-all">
-                        {sub.base_url}
-                        {sub.messages_path}
-                      </div>
-                      {endpointId !== sub.endpoint_id && (
-                        <div className="text-xs text-amber-600">
-                          {t("subscriptionEdit.endpointChangeWarn")}
+              <CardContent className="basic-info-body">
+                <div className="basic-info-row">
+                  <div className="basic-info-fields space-y-4">
+                    <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
+                      <Label>{t("subscriptionNew.field.provider")}</Label>
+                      {isCustom ? (
+                        <Input
+                          value={providerDisplayName}
+                          onChange={(e) => setProviderDisplayName(e.target.value)}
+                          placeholder={t("subscriptionEdit.providerNamePh")}
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <ProviderIcon iconId={sub.provider_icon} size={18} />
+                          <span>{providerName(sub, locale)}{t("subscriptionEdit.providerLocked")}</span>
                         </div>
                       )}
                     </div>
-                  </div>
-                )}
 
-                {!isCustom && provider && selectedEndpointForParams && (
-                  <UrlParamFields
-                    provider={provider}
-                    endpoint={selectedEndpointForParams}
-                    values={urlParams}
-                    onChange={(pid, v) => setUrlParams((prev) => ({ ...prev, [pid]: v }))}
-                    showErrors={showParamErrors}
-                    layout="grid"
-                  />
-                )}
+                    {/* 内置订阅: endpoint 切换下拉 */}
+                    {!isCustom && (
+                      <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
+                        <Label className="mt-2">{t("subscriptionNew.field.endpoint")}</Label>
+                        <div className="space-y-1 min-w-0">
+                          <Select value={endpointId} onValueChange={setEndpointId}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {provider?.endpoints.filter((e) => e.protocol === sub.endpoint_protocol).map((e) => (
+                                <SelectItem key={e.id} value={e.id} subtitle={e.base_url}>
+                                  {e.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="font-mono text-[10px] text-muted-foreground break-all">
+                            {sub.base_url}
+                            {sub.messages_path}
+                          </div>
+                          {endpointId !== sub.endpoint_id && (
+                            <div className="text-xs text-amber-600">
+                              {t("subscriptionEdit.endpointChangeWarn")}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
-                {/* 自定义订阅: base_url / messages_path / auth 可编辑 */}
-                {isCustom && (
-                  <>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                      <Label>Base URL</Label>
-                      <Input
-                        className="font-mono"
-                        value={baseUrl}
-                        onChange={(e) => setBaseUrl(e.target.value)}
-                        placeholder="https://api.example.com"
+                    {!isCustom && provider && selectedEndpointForParams && (
+                      <UrlParamFields
+                        provider={provider}
+                        endpoint={selectedEndpointForParams}
+                        values={urlParams}
+                        onChange={(pid, v) => setUrlParams((prev) => ({ ...prev, [pid]: v }))}
+                        showErrors={showParamErrors}
+                        layout="grid"
                       />
+                    )}
+
+                    {/* 自定义订阅: base_url / messages_path / auth 可编辑 */}
+                    {isCustom && (
+                      <>
+                        <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
+                          <Label>Base URL</Label>
+                          <Input
+                            className="font-mono"
+                            value={baseUrl}
+                            onChange={(e) => setBaseUrl(e.target.value)}
+                            placeholder="https://api.example.com"
+                          />
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
+                          <Label>Messages Path</Label>
+                          <Input
+                            className="font-mono"
+                            value={messagesPath}
+                            onChange={(e) => setMessagesPath(e.target.value)}
+                            placeholder="/v1/messages"
+                          />
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
+                          <Label>{t("subscriptionEdit.authHeaderName")}</Label>
+                          <Input
+                            className="font-mono"
+                            value={authHeaderName}
+                            onChange={(e) => setAuthHeaderName(e.target.value)}
+                            placeholder={t("subscriptionEdit.authHeaderNamePh")}
+                          />
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
+                          <Label>{t("subscriptionEdit.authHeaderFormat")}</Label>
+                          <Select
+                            value={authHeaderFormat}
+                            onValueChange={(v) => setAuthHeaderFormat(v as AuthHeaderFormat)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="bearer">{t("subscriptionEdit.authBearerOption")}</SelectItem>
+                              <SelectItem value="raw">{t("subscriptionEdit.authRawOption")}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
+                          <Label className="mt-2">{t("subscriptionEdit.requiredHeaders")}</Label>
+                          <div className="space-y-1">
+                            <KeyValueEditor
+                              value={requiredHeaders}
+                              onChange={setRequiredHeaders}
+                              keyPlaceholder={t("subscriptionEdit.requiredHeaderKeyPh")}
+                              valuePlaceholder={t("subscriptionEdit.requiredHeaderValuePh")}
+                              addLabel={t("subscriptionEdit.requiredHeadersAdd")}
+                              removeAriaLabel={t("subscriptionEdit.requiredHeadersRemove")}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {t("subscriptionEdit.requiredHeadersHint")}
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
+                      <Label>{t("subscriptionNew.field.note")}</Label>
+                      <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
                     </div>
                     <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                      <Label>Messages Path</Label>
-                      <Input
-                        className="font-mono"
-                        value={messagesPath}
-                        onChange={(e) => setMessagesPath(e.target.value)}
-                        placeholder="/v1/messages"
-                      />
-                    </div>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                      <Label>{t("subscriptionEdit.authHeaderName")}</Label>
-                      <Input
-                        className="font-mono"
-                        value={authHeaderName}
-                        onChange={(e) => setAuthHeaderName(e.target.value)}
-                        placeholder={t("subscriptionEdit.authHeaderNamePh")}
-                      />
-                    </div>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                      <Label>{t("subscriptionEdit.authHeaderFormat")}</Label>
-                      <Select
-                        value={authHeaderFormat}
-                        onValueChange={(v) => setAuthHeaderFormat(v as AuthHeaderFormat)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="bearer">{t("subscriptionEdit.authBearerOption")}</SelectItem>
-                          <SelectItem value="raw">{t("subscriptionEdit.authRawOption")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
-                      <Label className="mt-2">{t("subscriptionEdit.requiredHeaders")}</Label>
-                      <div className="space-y-1">
-                        <KeyValueEditor
-                          value={requiredHeaders}
-                          onChange={setRequiredHeaders}
-                          keyPlaceholder={t("subscriptionEdit.requiredHeaderKeyPh")}
-                          valuePlaceholder={t("subscriptionEdit.requiredHeaderValuePh")}
-                          addLabel={t("subscriptionEdit.requiredHeadersAdd")}
-                          removeAriaLabel={t("subscriptionEdit.requiredHeadersRemove")}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          {t("subscriptionEdit.requiredHeadersHint")}
-                        </p>
+                      <Label>API Key</Label>
+                      <div className="flex items-center gap-2">
+                        <Input type="password" value="••••••••••••••" disabled />
+                        <Button variant="outline" size="sm" onClick={() => setKeyDialog(true)}>
+                          {t("common.modify")}
+                        </Button>
                       </div>
                     </div>
-                  </>
-                )}
 
-                <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                  <Label>{t("subscriptionNew.field.note")}</Label>
-                  <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-                </div>
-                <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                  <Label>API Key</Label>
-                  <div className="flex items-center gap-2">
-                    <Input type="password" value="••••••••••••••" disabled />
-                    <Button variant="outline" size="sm" onClick={() => setKeyDialog(true)}>
-                      {t("common.modify")}
-                    </Button>
+                    {/* 仅 Anthropic 透传订阅: 透传客户端请求头开关 (翻译类协议不消费此字段) */}
+                    {sub.auth_type === "api_key" && !isSystemOne && (
+                      <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
+                        <Label className="mt-0.5">{t("subscriptionEdit.forwardClientHeaders")}</Label>
+                        <div className="space-y-1">
+                          <Switch
+                            checked={forwardClientHeaders}
+                            onCheckedChange={setForwardClientHeaders}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {t("subscriptionEdit.forwardClientHeadersHint")}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
+                  <SubscriptionBalancePanel
+                    subscription={sub}
+                    onChanged={() => {
+                      queryClient.invalidateQueries({ queryKey: ["subscription", id] });
+                      queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
+                    }}
+                  />
                 </div>
-
-                {/* 仅 Anthropic 透传订阅: 透传客户端请求头开关 (翻译类协议不消费此字段) */}
-                {sub.auth_type === "api_key" && !isSystemOne && (
-                  <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
-                    <Label className="mt-0.5">{t("subscriptionEdit.forwardClientHeaders")}</Label>
-                    <div className="space-y-1">
-                      <Switch
-                        checked={forwardClientHeaders}
-                        onCheckedChange={setForwardClientHeaders}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t("subscriptionEdit.forwardClientHeadersHint")}
-                      </p>
-                    </div>
-                  </div>
-                )}
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle>{t("subscriptionEdit.modelSlotsTitle")}</CardTitle>
+              <CardHeader className="slot-card-head flex-row flex-wrap items-start justify-between gap-x-5 gap-y-3 space-y-0">
+                <div className="min-w-0 space-y-1.5">
+                  <CardTitle>{t("subscriptionEdit.modelSlotsTitle")}</CardTitle>
+                  {!isSystemOne && (
+                    <p className="text-sm text-muted-foreground">{t("schedule.edit.cardDesc")}</p>
+                  )}
+                </div>
+                {!isSystemOne && (
+                  <ModelListModeBar
+                    label={t("schedule.edit.modelListLabel")}
+                    mode={modelMode}
+                    onChoose={chooseModelMode}
+                    onRefresh={refreshModels}
+                    loading={fetchingModels}
+                  />
+                )}
               </CardHeader>
               <CardContent>
+                {!isSystemOne && (
+                  <div className="mb-6 border-b border-dashed border-(--line) pb-6">
+                    <SlotScheduleEditor
+                      slots={slots}
+                      onSlotsChange={setSlots}
+                      schedules={schedules}
+                      onSchedulesChange={setSchedules}
+                      models={modelIds}
+                      manual={modelMode === "manual"}
+                      initialSlot={initialSlot}
+                      efforts={slotEfforts}
+                      onEffortsChange={setSlotEfforts}
+                      effortDisabled={sub.auth_type === "kiro_oauth"}
+                      effortDisabledReason={t("slotEffort.unsupportedKiro")}
+                    />
+                  </div>
+                )}
                 <ModelSlotPicker
                   value={slots}
                   onChange={setSlots}
@@ -509,45 +549,14 @@ export function SubscriptionEditPage() {
                   }
                   systemone={isSystemOne}
                   jevRequired={isSystemOne && sub.is_user_defined}
+                  hideMainSlots={!isSystemOne}
+                  mode={isSystemOne ? undefined : modelMode}
                 />
                 {sub.model_cache && !isSystemOne && (
                   <div className="mt-3 text-xs text-muted-foreground">
                     {t("subscriptionEdit.modelCacheUpdated")}{new Date(sub.model_cache.fetched_at).toLocaleString()}
                   </div>
                 )}
-              </CardContent>
-            </Card>
-
-            <SubscriptionBalanceCard
-              subscription={sub}
-              onChanged={() => {
-                queryClient.invalidateQueries({ queryKey: ["subscription", id] });
-                queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
-              }}
-            />
-
-            <Card>
-              <CardHeader>
-                <CardTitle>{t("quota.title")}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">{t("quota.desc")}</p>
-                {(["daily", "weekly", "monthly", "total"] as QuotaPeriod[]).map((p) => (
-                  <div key={p} className="flex items-center gap-3">
-                    <Label className="w-24 shrink-0">{t(`quota.period.${p}`)}</Label>
-                    <Input
-                      className="font-mono"
-                      placeholder={t("quota.placeholder")}
-                      value={quotaInputs[p]}
-                      onChange={(e) => setQuotaInputs({ ...quotaInputs, [p]: e.target.value })}
-                    />
-                  </div>
-                ))}
-                {quotaError && <p className="text-sm text-destructive">{quotaError}</p>}
-                <Button size="sm" onClick={saveQuotas} disabled={updateQuotasMut.isPending}>
-                  {updateQuotasMut.isPending && <LoaderCircle className="h-4 w-4 animate-spin" />}
-                  {t("quota.save")}
-                </Button>
               </CardContent>
             </Card>
 
@@ -570,6 +579,8 @@ export function SubscriptionEditPage() {
             <div className="page-col space-y-2">
               {testResult && (
                 <Alert variant={testResult.ok ? "default" : "destructive"}>
+                  {/* 失败必须有明确标题: 只靠边框颜色区分成败, 用户看不出来 (issue #63) */}
+                  {!testResult.ok && <AlertTitle>{t("testConnection.failed")}</AlertTitle>}
                   <AlertDescription>
                     <div>{testResultText(testResult, t)}</div>
                     {testResult.model_used && (
@@ -607,8 +618,8 @@ export function SubscriptionEditPage() {
               <Button variant="destructive" size="sm" onClick={() => setDeleteDialog(true)}>
                 {t("common.delete")}
               </Button>
-              <Button size="sm" onClick={save} disabled={updateMut.isPending}>
-                {updateMut.isPending && <LoaderCircle className="h-4 w-4 animate-spin" />}
+              <Button size="sm" onClick={save} disabled={saving}>
+                {saving && <LoaderCircle className="h-4 w-4 animate-spin" />}
                 {t("common.save")}
               </Button>
             </div>

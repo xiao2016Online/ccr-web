@@ -16,14 +16,14 @@ use markdown::NotesDoc;
 include!(concat!(env!("OUT_DIR"), "/embedded_release_notes.rs"));
 
 /// 允许的说明语言; 文件名为 `<lang>.md`
-pub const LANGS: [&str; 3] = ["zh", "en", "ja"];
+pub const LANGS: [&str; 4] = ["zh", "zh-Hant", "en", "ja"];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct VersionNotes {
     pub version: String,
     pub date: Option<String>,
     pub codename: Option<String>,
-    /// 键 "zh" / "en" / "ja"; zh 必有
+    /// 键 "zh" / "zh-Hant" / "en" / "ja"; zh 必有
     pub notes: BTreeMap<String, NotesDoc>,
 }
 
@@ -80,7 +80,7 @@ fn build_one(dir: &str, files: &[(&str, &str)]) -> Result<VersionNotes, String> 
         let lang = file
             .strip_suffix(".md")
             .filter(|l| LANGS.contains(l))
-            .ok_or_else(|| format!("{file}: 只允许 meta.json / zh.md / en.md / ja.md"))?;
+            .ok_or_else(|| format!("{file}: 只允许 meta.json / zh.md / zh-Hant.md / en.md / ja.md"))?;
         let doc = markdown::parse(raw).map_err(|e| format!("{file}: {e}"))?;
         notes.insert(lang.to_string(), doc);
     }
@@ -245,6 +245,16 @@ mod tests {
     }
 
     /// 仓库里真实的 release-notes/ 必须全部合法; 写错格式在 cargo test 阶段就拦住。
+    #[test]
+    fn build_accepts_zh_hant_notes() {
+        let (v, errors) = build(&[
+            ("6.5.0", "zh.md", "## 新功能\n- 一条\n"),
+            ("6.5.0", "zh-Hant.md", "## 新功能\n- 一條\n"),
+        ]);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(v[0].notes.keys().collect::<Vec<_>>(), ["zh", "zh-Hant"]);
+    }
+
     #[test]
     fn every_embedded_release_note_is_valid() {
         let (out, errors) = build(EMBEDDED_RELEASE_NOTES);

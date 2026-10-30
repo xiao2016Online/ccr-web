@@ -18,12 +18,14 @@
 id: tencent
 display_name:
   zh: "腾讯云大模型"
+  zh-Hant: "騰訊雲大模型"
   en: "Tencent Cloud TokenHub"
   ja: "Tencent Cloud TokenHub"
 icon: tencent
 category: first_party
 description:
   zh: "腾讯云大模型服务平台,Token Plan 订阅 + TokenHub 按量付费,聚合 Hy3/HunyuanX/DeepSeek/GLM/Kimi/MiniMax"
+  zh-Hant: "騰訊雲大模型服務平台,Token Plan 訂閱 + TokenHub 按量計費,聚合 Hy3/HunyuanX/DeepSeek/GLM/Kimi/MiniMax"
   en: "Tencent Cloud LLM service platform: Token Plan subscription + TokenHub pay-as-you-go, aggregating Hy3 / HunyuanX / DeepSeek / GLM / Kimi / MiniMax"
   ja: "Tencent Cloud の大規模モデルサービス基盤。Token Plan サブスクリプション + TokenHub 従量課金で、Hy3 / HunyuanX / DeepSeek / GLM / Kimi / MiniMax を集約"
 homepage: "https://cloud.tencent.com/product/lkeap"
@@ -37,10 +39,12 @@ endpoints:
   - id: token_plan
     label:
       zh: "国内版 · Token Plan 订阅"
+      zh-Hant: "中國版 · Token Plan 訂閱"
       en: "China · Token Plan subscription"
       ja: "中国版 · Token Plan サブスクリプション"
     description:
       zh: "订阅制,套餐额度仅在此端点扣减"
+      zh-Hant: "訂閱制,方案額度僅在此端點扣減"
       en: "Subscription-based; plan quota is only deducted on this endpoint"
       ja: "サブスクリプション制。プランの枠はこのエンドポイントでのみ消費されます"
     base_url: "https://api.lkeap.cloud.tencent.com/plan/anthropic"
@@ -51,10 +55,12 @@ endpoints:
   - id: tokenhub_cn
     label:
       zh: "国内版 · TokenHub 按量付费"
+      zh-Hant: "中國版 · TokenHub 按量計費"
       en: "China · TokenHub pay-as-you-go"
       ja: "中国版 · TokenHub 従量課金"
     description:
       zh: "境内主接入地址,按 token 计费"
+      zh-Hant: "中國大陸主要接入位址,按 token 計費"
       en: "Main endpoint for mainland China, billed per token"
       ja: "中国国内向けのメインエンドポイント。トークン従量課金"
     base_url: "https://tokenhub.tencentmaas.com"
@@ -65,10 +71,12 @@ endpoints:
   - id: tokenhub_intl
     label:
       zh: "国际版 · TokenHub 按量付费"
+      zh-Hant: "國際版 · TokenHub 按量計費"
       en: "International · TokenHub pay-as-you-go"
       ja: "国際版 · TokenHub 従量課金"
     description:
       zh: "境外主接入地址,按 token 计费"
+      zh-Hant: "海外主要接入位址,按 token 計費"
       en: "Main endpoint outside mainland China, billed per token"
       ja: "中国国外向けのメインエンドポイント。トークン従量課金"
     base_url: "https://tokenhub-intl.tencentmaas.com"

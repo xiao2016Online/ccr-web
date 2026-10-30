@@ -4,12 +4,14 @@
 id: stepfun
 display_name:
   zh: "阶跃星辰 Stepfun"
+  zh-Hant: "階躍星辰 Stepfun"
   en: "StepFun"
   ja: "StepFun"
 icon: stepfun
 category: first_party
 description:
   zh: "阶跃星辰官方 Anthropic 兼容端点（Step Plan 订阅 + 按量付费 API）"
+  zh-Hant: "階躍星辰官方 Anthropic 相容端點（Step Plan 訂閱 + 按量計費 API）"
   en: "Official StepFun Anthropic-compatible endpoint (Step Plan subscription + pay-as-you-go API)"
   ja: "StepFun 公式の Anthropic 互換エンドポイント（Step Plan サブスクリプション + 従量課金 API）"
 homepage: "https://www.stepfun.com"
@@ -22,10 +24,12 @@ endpoints:
   - id: step_plan
     label:
       zh: "国内版 · Step Plan · 订阅套餐"
+      zh-Hant: "中國版 · Step Plan · 訂閱方案"
       en: "China · Step Plan · subscription plan"
       ja: "中国版 · Step Plan · サブスクリプションプラン"
     description:
       zh: "阶跃星辰订阅套餐, 推荐配合 step-3.5-flash 系列"
+      zh-Hant: "階躍星辰訂閱方案, 推薦配合 step-3.5-flash 系列"
       en: "StepFun subscription plan, recommended with the step-3.5-flash series"
       ja: "StepFun のサブスクリプションプラン。step-3.5-flash シリーズとの併用を推奨"
     base_url: "https://api.stepfun.com/step_plan"
@@ -36,10 +40,12 @@ endpoints:
   - id: api_endpoint
     label:
       zh: "按量付费 API"
+      zh-Hant: "按量計費 API"
       en: "Pay-as-you-go API"
       ja: "従量課金 API"
     description:
       zh: "阶跃星辰官方按量付费 Anthropic 兼容端点"
+      zh-Hant: "階躍星辰官方按量計費 Anthropic 相容端點"
       en: "Official StepFun pay-as-you-go Anthropic-compatible endpoint"
       ja: "StepFun 公式の従量課金 Anthropic 互換エンドポイント"
     base_url: "https://api.stepfun.com"
@@ -50,10 +56,12 @@ endpoints:
   - id: step_plan_global
     label:
       zh: "国际版 · Step Plan · 订阅套餐"
+      zh-Hant: "國際版 · Step Plan · 訂閱方案"
       en: "International · Step Plan · subscription plan"
       ja: "国際版 · Step Plan · サブスクリプションプラン"
     description:
       zh: "阶跃星辰官方按量付费 Anthropic 兼容端点"
+      zh-Hant: "階躍星辰官方按量計費 Anthropic 相容端點"
       en: "Official StepFun pay-as-you-go Anthropic-compatible endpoint"
       ja: "StepFun 公式の従量課金 Anthropic 互換エンドポイント"
     base_url: "https://api.stepfun.ai/step_plan"

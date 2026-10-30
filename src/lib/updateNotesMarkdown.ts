@@ -4,6 +4,7 @@
 // 用不了 Rust 侧的严格解析器 (src-tauri/src/release_notes/markdown.rs)。
 // 输出是结构化数据, 由 React 渲染, 全程不注入 HTML。
 import type { NotesInline, NotesLang } from "@/types";
+import { notesFallback } from "@/components/release-notes/pickLang";
 
 export interface MdListItem {
   text: NotesInline[];
@@ -17,15 +18,25 @@ export type MdBlock =
   | { kind: "code"; text: string }
   | { kind: "rule" };
 
-/** release-body.mjs 写在每段开头的语言标签 (单独一行的粗体) */
-const LANG_LABELS: Record<NotesLang, string> = { zh: "中文", en: "English", ja: "日本語" };
+/**
+ * release-body.mjs 写在每段开头的语言标签 (单独一行的粗体) → 语言。
+ * 「中文」是加繁中之前的旧标签, 老版本的 Release 正文仍然用它。用 Map 而不是对象字面量:
+ * 标签来自网络上的正文, `**constructor**` 不能命中原型链。
+ */
+const LABEL_LANG = new Map<string, NotesLang>([
+  ["简体中文", "zh"],
+  ["中文", "zh"],
+  ["繁體中文", "zh-Hant"],
+  ["English", "en"],
+  ["日本語", "ja"],
+]);
 
 const RULE_RE = /^ {0,3}([-*_])( *\1){2,} *$/;
 const HEADING_RE = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const LIST_RE = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 const FENCE_RE = /^ {0,3}(```|~~~)/;
 
-/** 三语正文只取界面语言那一段; 想要的语言缺了按 en → zh 回退; 认不出三语结构就原样返回 */
+/** 多语正文只取界面语言那一段; 缺了按 notesFallback 回退; 认不出多语结构就原样返回 */
 export function pickNotesLang(body: string, want: NotesLang): string {
   const text = body.replace(/\r\n/g, "\n").trim();
   const chunks = text.split(/\n[ \t]*---[ \t]*\n/);
@@ -33,10 +44,10 @@ export function pickNotesLang(body: string, want: NotesLang): string {
   for (const chunk of chunks) {
     const lines = chunk.trim().split("\n");
     const label = lines[0]?.trim().match(/^\*\*(.+)\*\*$/)?.[1];
-    const lang = (Object.keys(LANG_LABELS) as NotesLang[]).find((l) => LANG_LABELS[l] === label);
+    const lang = label === undefined ? undefined : LABEL_LANG.get(label);
     if (lang && !byLang.has(lang)) byLang.set(lang, lines.slice(1).join("\n").trim());
   }
-  for (const l of [want, "en", "zh"] as const) {
+  for (const l of notesFallback(want)) {
     const hit = byLang.get(l);
     if (hit) return hit;
   }

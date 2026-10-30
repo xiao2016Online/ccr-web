@@ -1,12 +1,14 @@
 id: modelscope
 display_name:
   zh: "魔搭 ModelScope"
+  zh-Hant: "魔搭 ModelScope"
   en: "Alibaba ModelScope"
   ja: "Alibaba ModelScope"
 icon: modelscope
 category: aggregator
 description:
   zh: "阿里达摩院魔搭社区 API-Inference, Anthropic 兼容端点 (OpenAI/Anthropic 双协议, 仅用 Anthropic 路径)"
+  zh-Hant: "阿里達摩院魔搭社群 API-Inference, Anthropic 相容端點 (OpenAI/Anthropic 雙協議, 僅用 Anthropic 路徑)"
   en: "API-Inference from Alibaba DAMO Academy's ModelScope community, Anthropic-compatible endpoint (supports both OpenAI and Anthropic protocols; only the Anthropic path is used)"
   ja: "Alibaba DAMO Academy の ModelScope コミュニティ API-Inference。Anthropic 互換エンドポイント（OpenAI / Anthropic の両プロトコル対応、Anthropic 経路のみ使用）"
 homepage: "https://modelscope.cn"
@@ -20,6 +22,11 @@ compatibility_notes:
     已知 issue: 部分开源模型 (Qwen / GLM 系) 在带 system prompt 的请求下可能返回 "message must be json_object" 错误,
     需要在 Claude Code 侧避开 system 参数, 或换用对 system 兼容更好的模型。
     /models 接口未携带 token 时只返回公共列表, 携带 token 可能返回更完整的私有/受限模型列表。
+  zh-Hant: |
+    魔搭支援 Anthropic Messages 相容路徑 /v1/messages。
+    已知 issue: 部分開源模型 (Qwen / GLM 系) 在帶 system prompt 的請求下可能回傳 "message must be json_object" 錯誤,
+    需要在 Claude Code 側避開 system 參數, 或換用對 system 相容更好的模型。
+    /models 介面未攜帶 token 時只回傳公開列表, 攜帶 token 可能回傳更完整的私有/受限模型列表。
   en: |
     ModelScope supports the Anthropic Messages-compatible path /v1/messages.
     Known issue: some open models (Qwen / GLM families) may return a "message must be json_object" error for requests with a system prompt;
@@ -35,10 +42,12 @@ endpoints:
   - id: api_endpoint
     label:
       zh: "按量付费 API"
+      zh-Hant: "按量計費 API"
       en: "Pay-as-you-go API"
       ja: "従量課金 API"
     description:
       zh: "魔搭社区 API-Inference 按量推理服务"
+      zh-Hant: "魔搭社群 API-Inference 按量推理服務"
       en: "ModelScope community API-Inference, pay-as-you-go inference"
       ja: "ModelScope コミュニティ API-Inference の従量課金推論サービス"
     base_url: "https://api-inference.modelscope.cn"

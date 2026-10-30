@@ -504,7 +504,7 @@ mod tests {
             default_endpoint: None,
             auth: crate::client::dto::ProviderAuth { auth_type: "api_key".into() },
             model_discovery: crate::client::dto::ModelDiscovery { enabled: true, example_models: vec![] },
-            translations: crate::client::dto::ProviderTranslations { en: text(id), ja: text(id) },
+            translations: crate::client::dto::ProviderTranslations { zh_hant: Some(text(id)), en: text(id), ja: text(id) },
             url_params: vec![],
         }
     }

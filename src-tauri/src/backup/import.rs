@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use super::format::{export_to_row, header_field, ExportFile, ExportSubscription, SecretsPlain, FIELD_API_KEY};
 use crate::commands::subscriptions::{
-    validate_base_url, validate_gemini_messages_path, validate_messages_path,
+    check_schedules_for, validate_base_url, validate_gemini_messages_path, validate_messages_path,
     validate_required_headers, validate_slot_efforts, validate_token_quotas,
 };
 use crate::error::{AppError, AppResult};
@@ -87,6 +87,7 @@ fn validate_entry(sub: &ExportSubscription) -> Result<(), String> {
         if sub.endpoint_protocol == EndpointProtocol::Systemone && sub.auth_type != AuthType::ApiKey {
             return Err(AppError::BadRequest("System One 端点只支持 api_key 鉴权".into()));
         }
+        check_schedules_for(sub.endpoint_protocol, &sub.slot_schedules)?;
         Ok(())
     }
     check(sub).map_err(|e| match e {
@@ -371,6 +372,7 @@ mod tests {
     use crate::db::run_migrations;
     use crate::provider::model::AuthType;
     use crate::subscription::model::SubscriptionRow;
+    use crate::subscription::schedule::ScheduleRule;
     use sqlx::sqlite::SqlitePoolOptions;
 
     const PW: &str = "0123456789";
@@ -389,6 +391,13 @@ mod tests {
         a.messages_path = "/v1/messages".into();
         a.api_key = "sk-a".into();
         a.required_headers.insert("x-relay-key".into(), "hk".into());
+        a.slot_schedules.opus = vec![ScheduleRule {
+            days: vec![1, 2, 3, 4, 5],
+            start: "22:00".into(),
+            end: "08:00".into(),
+            model: "night-model".into(),
+            effort: None,
+        }];
         let mut b = SubscriptionRow::test_fixture("custom", "custom");
         b.display_name = "B".into();
         b.base_url = "http://127.0.0.1:11434".into();
@@ -668,6 +677,8 @@ mod tests {
         assert_eq!(a.enabled, orig.enabled);
         assert_eq!(a.created_at.timestamp_millis(), orig.created_at.timestamp_millis());
         assert_eq!(serde_json::to_value(&a.model_slots).unwrap(), serde_json::to_value(&orig.model_slots).unwrap());
+        assert_eq!(a.slot_schedules, orig.slot_schedules);
+        assert_eq!(a.slot_schedules.opus.len(), 1);
 
         let vms = vm_store::load_all(&dst).await.unwrap();
         assert_eq!(vms[&VirtualModelName::Opus].subscription_ids, vec![f.rows[0].id, f.rows[1].id]);
@@ -725,7 +736,7 @@ mod tests {
     #[test]
     fn each_create_time_rule_is_enforced() {
         type Mutate = fn(&mut ExportSubscription);
-        let cases: [(&str, Mutate); 8] = [
+        let cases: [(&str, Mutate); 10] = [
             ("base_url", |s| s.base_url = "a.example".into()),
             ("messages_path", |s| s.messages_path = "no-slash".into()),
             ("models url", |s| s.model_discovery.url = Some("file:///etc/passwd".into())),
@@ -742,6 +753,25 @@ mod tests {
             }),
             ("slot effort", |s| s.slot_efforts.opus = Some("turbo".into())),
             ("zero quota", |s| s.token_quotas.daily = Some(0)),
+            ("bad schedule time", |s| {
+                s.slot_schedules.sonnet = vec![ScheduleRule {
+                    days: vec![1],
+                    start: "08:15".into(),
+                    end: "09:00".into(),
+                    model: "m".into(),
+                    effort: None,
+                }];
+            }),
+            ("systemone schedule", |s| {
+                s.endpoint_protocol = EndpointProtocol::Systemone;
+                s.slot_schedules.opus = vec![ScheduleRule {
+                    days: vec![1],
+                    start: "08:00".into(),
+                    end: "09:00".into(),
+                    model: "m".into(),
+                    effort: None,
+                }];
+            }),
         ];
         for (what, mutate) in cases {
             let mut f = fixture(false);
@@ -753,6 +783,52 @@ mod tests {
                 "{what} should make B invalid"
             );
         }
+    }
+
+    #[test]
+    fn systemone_schedule_skip_reason_names_system_one() {
+        let mut f = fixture(false);
+        {
+            let b = find_mut(&mut f, "B");
+            b.endpoint_protocol = EndpointProtocol::Systemone;
+            b.slot_schedules.opus = vec![ScheduleRule {
+                days: vec![1],
+                start: "08:00".into(),
+                end: "09:00".into(),
+                model: "m".into(),
+                effort: None,
+            }];
+        }
+        let p = preview(&f.file, &empty_local());
+        let b = p.subscriptions.iter().find(|s| s.display_name == "B").unwrap();
+        assert_eq!(b.status, PreviewStatus::SkipInvalid);
+        assert!(b.invalid_reason.as_deref().unwrap().contains("System One"), "{:?}", b.invalid_reason);
+    }
+
+    #[test]
+    fn schedule_errors_name_the_slot_and_old_files_import_with_none() {
+        let mut f = fixture(false);
+        find_mut(&mut f, "B").slot_schedules.haiku = vec![ScheduleRule {
+            days: vec![1],
+            start: "08:15".into(),
+            end: "09:00".into(),
+            model: "m".into(),
+            effort: None,
+        }];
+        let p = preview(&f.file, &empty_local());
+        let b = p.subscriptions.iter().find(|s| s.display_name == "B").unwrap();
+        assert_eq!(b.status, PreviewStatus::SkipInvalid);
+        assert!(b.invalid_reason.as_deref().unwrap().contains("haiku"), "{:?}", b.invalid_reason);
+
+        // An export written before slot_schedules existed has no such key at all.
+        let mut json = serde_json::to_value(&fixture(false).file).unwrap();
+        for s in json["subscriptions"].as_array_mut().unwrap() {
+            s.as_object_mut().unwrap().remove("slot_schedules");
+        }
+        let old: ExportFile = serde_json::from_value(json).unwrap();
+        let plan = plan(&old, None, &empty_local(), Utc::now());
+        assert!(plan.report.skipped_invalid.is_empty(), "{:?}", plan.report.skipped_invalid);
+        assert!(plan.inserts.iter().all(|r| r.slot_schedules.is_empty()));
     }
 
     #[test]

@@ -1,11 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/api/tauri";
 import { runtime } from "@/runtime";
 import { useMarkReleaseNotesSeen, useReleaseNotes } from "@/hooks/useReleaseNotes";
 import { useSettings } from "@/hooks/useSettings";
 import type { ReleaseNotesDto, VersionNotes } from "@/types";
 import { ReleaseNotesDialog, type ReleaseNotesMode } from "./ReleaseNotesDialog";
+import { useOnboardingState } from "@/components/onboarding/useOnboardingState";
 
 interface DialogCtx {
   /** 侧栏入口: 当前版本展开 + 更早的版本 */
@@ -47,12 +46,8 @@ function snapshot(data: ReleaseNotesDto, mode: ReleaseNotesMode): View | null {
  */
 export function ReleaseNotesProvider({ children }: { children: ReactNode }) {
   const { data } = useReleaseNotes();
-  // 与 OnboardingGate 同一个 key, 直接复用缓存
-  const onboarding = useQuery({
-    queryKey: ["onboarding-state"],
-    queryFn: () => api.getOnboardingState(),
-    staleTime: Infinity,
-  });
+  // 引导窗口没走完时不弹, 免得两个弹窗叠在一起
+  const onboarding = useOnboardingState();
   // 等设置加载完再自动弹: 弹窗的初始语言标签取自 preferred_language, 否则会先按系统语言选错
   const settings = useSettings();
   const mark = useMarkReleaseNotesSeen();

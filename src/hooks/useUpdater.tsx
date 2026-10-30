@@ -236,12 +236,22 @@ export function useUpdater(): UpdaterState {
   return ctx;
 }
 
+/**
+ * 启动时自动检查一次 (settings.auto_check_updates 关闭时跳过)。
+ * 必须等设置加载完再决定: 既要读开关, check 闭包也要带上正确的 update_source
+ * (Linux deb 的手动比对按它选 manifest)。每次启动至多判定一次 ——
+ * 运行中把开关从关切到开不会补查, 下次启动生效。
+ */
 export function useUpdaterAutoCheck() {
   const { check } = useUpdater();
+  const { data: settings } = useSettings();
+  const decidedRef = useRef(false);
   useEffect(() => {
+    if (!settings || decidedRef.current) return;
+    decidedRef.current = true;
+    if (!settings.auto_check_updates) return;
     void check();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [settings, check]);
 }
 
 async function fetchManifestForManualCompare(

@@ -11,13 +11,17 @@ import { runtime } from "@/runtime";
 import { useTheme, type ColorMode } from "@/hooks/useTheme";
 import type { UpdateSource } from "@/types";
 import type { SettingsForm } from "./useSettingsForm";
+import { useWizard } from "@/components/onboarding/wizardStore";
+import { useOnboardingState } from "@/components/onboarding/useOnboardingState";
 
 const COLOR_MODES: readonly ColorMode[] = ["system", "light", "dark"];
 
-/** 通用: 语言 / 开机自启 / 更新源, 外观 (界面主题 / 明暗模式). */
+/** 通用: 语言 / 开机自启 / 更新源 / 自动检查更新, 外观 (界面主题 / 明暗模式). */
 export function GeneralTab({ form }: { form: SettingsForm }) {
   const { t } = useT();
   const { mode, setMode } = useTheme();
+  const wizard = useWizard();
+  const onboarding = useOnboardingState();
 
   return (
     <>
@@ -40,11 +44,29 @@ export function GeneralTab({ form }: { form: SettingsForm }) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="system">{t("settings.language.system")}</SelectItem>
-                <SelectItem value="zh">中文</SelectItem>
+                <SelectItem value="zh">简体中文</SelectItem>
+                <SelectItem value="zh-Hant">繁體中文</SelectItem>
                 <SelectItem value="en">English</SelectItem>
                 <SelectItem value="ja">日本語</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="setting-row">
+            <div className="label-col">
+              {t("settings.onboarding.label")}
+              <div className="desc">{t("settings.onboarding.desc")}</div>
+            </div>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => {
+                // 还没走完: 接着上次的进度 (清掉会丢下窗口建的订阅); 已完成: 从头再走一遍
+                if (onboarding.data?.completed) wizard.reset();
+                wizard.reopen();
+              }}
+            >
+              {t("settings.onboarding.reopen")}
+            </button>
           </div>
           {runtime.kind === "desktop" && (
             <>
@@ -72,6 +94,18 @@ export function GeneralTab({ form }: { form: SettingsForm }) {
                     <SelectItem value="china">{t("settings.update.source.china")}</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              {/* 服务器版无应用内更新, 自动检查开关只对桌面有意义 */}
+              <div className="setting-row">
+                <div className="label-col">
+                  {t("settings.update.autoCheck.label")}
+                  <div className="desc">{t("settings.update.autoCheck.desc")}</div>
+                </div>
+                <Toggle
+                  checked={form.settings.data?.auto_check_updates ?? true}
+                  onChange={(v) => void form.changeAutoCheckUpdates(v)}
+                  aria-label={t("settings.update.autoCheck.label")}
+                />
               </div>
             </>
           )}

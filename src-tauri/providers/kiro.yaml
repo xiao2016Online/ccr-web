@@ -4,6 +4,7 @@ icon: ""
 category: second_party
 description:
   zh: "复用 Kiro IDE / kiro-cli 的免费 Claude 额度 (走 AWS CodeWhisperer 后端)。需在 cc-router UI 内独立完成凭据导入或 AWS Builder ID 登录。"
+  zh-Hant: "沿用 Kiro IDE / kiro-cli 的免費 Claude 額度 (走 AWS CodeWhisperer 後端)。需在 cc-router UI 內獨立完成憑證匯入或 AWS Builder ID 登入。"
   en: "Reuses the free Claude quota of Kiro IDE / kiro-cli (via the AWS CodeWhisperer backend). Import credentials or sign in with AWS Builder ID separately in the cc-router UI."
   ja: "Kiro IDE / kiro-cli の無料 Claude 枠を再利用します（AWS CodeWhisperer バックエンド経由）。cc-router の画面で認証情報のインポートまたは AWS Builder ID でのログインを別途行ってください。"
 homepage: "https://kiro.dev/"
@@ -12,6 +13,7 @@ docs_url: "https://kiro.dev/docs"
 compatibility: verified
 compatibility_notes:
   zh: 不推荐使用，封号频繁，风险较高。
+  zh-Hant: 不推薦使用，封號頻繁，風險較高。
   en: "Not recommended: accounts are frequently banned and the risk is high."
   ja: "非推奨です。アカウント停止が頻発しており、リスクが高いです。"
 
@@ -19,10 +21,12 @@ endpoints:
   - id: runtime_us_east_1
     label:
       zh: "Kiro Runtime · US East (新地址 · 推荐)"
+      zh-Hant: "Kiro Runtime · US East (新位址 · 推薦)"
       en: "Kiro Runtime · US East (new endpoint · recommended)"
       ja: "Kiro Runtime · US East（新アドレス · 推奨）"
     description:
       zh: "走 runtime.us-east-1.kiro.dev/generateAssistantResponse, AWS 2026-05-15 起强制使用的新地址。"
+      zh-Hant: "走 runtime.us-east-1.kiro.dev/generateAssistantResponse, AWS 2026-05-15 起強制使用的新位址。"
       en: "Uses runtime.us-east-1.kiro.dev/generateAssistantResponse, the new endpoint AWS has required since 2026-05-15."
       ja: "runtime.us-east-1.kiro.dev/generateAssistantResponse を使用します。AWS が 2026-05-15 から必須とした新アドレスです。"
     base_url: "https://runtime.us-east-1.kiro.dev"
@@ -33,10 +37,12 @@ endpoints:
   - id: runtime_eu_central_1
     label:
       zh: "Kiro Runtime · EU Central (新地址)"
+      zh-Hant: "Kiro Runtime · EU Central (新位址)"
       en: "Kiro Runtime · EU Central (new endpoint)"
       ja: "Kiro Runtime · EU Central（新アドレス）"
     description:
       zh: "走 runtime.eu-central-1.kiro.dev/generateAssistantResponse, 欧洲区域用户低延迟选择。"
+      zh-Hant: "走 runtime.eu-central-1.kiro.dev/generateAssistantResponse, 歐洲區域使用者低延遲選擇。"
       en: "Uses runtime.eu-central-1.kiro.dev/generateAssistantResponse; the low-latency choice for users in Europe."
       ja: "runtime.eu-central-1.kiro.dev/generateAssistantResponse を使用します。ヨーロッパのユーザー向けの低遅延な選択肢です。"
     base_url: "https://runtime.eu-central-1.kiro.dev"
@@ -47,10 +53,12 @@ endpoints:
   - id: codewhisperer
     label:
       zh: "Kiro CodeWhisperer · US East (旧地址 · 2026-05-15 后下线)"
+      zh-Hant: "Kiro CodeWhisperer · US East (舊位址 · 2026-05-15 後下線)"
       en: "Kiro CodeWhisperer · US East (legacy endpoint · retired after 2026-05-15)"
       ja: "Kiro CodeWhisperer · US East（旧アドレス · 2026-05-15 以降廃止）"
     description:
       zh: "走 q.us-east-1.amazonaws.com/generateAssistantResponse, AWS 官方通知 2026-05-15 起废止, 仅作过渡期备用。新订阅请优先选 Runtime 端点。"
+      zh-Hant: "走 q.us-east-1.amazonaws.com/generateAssistantResponse, AWS 官方通知 2026-05-15 起廢止, 僅作過渡期備用。新訂閱請優先選 Runtime 端點。"
       en: "Uses q.us-east-1.amazonaws.com/generateAssistantResponse, which AWS announced is deprecated from 2026-05-15; kept only as a fallback during the transition. Prefer the Runtime endpoints for new subscriptions."
       ja: "q.us-east-1.amazonaws.com/generateAssistantResponse を使用します。AWS は 2026-05-15 からの廃止を告知しており、移行期間の予備としてのみ残しています。新しいサブスクリプションでは Runtime エンドポイントを優先してください。"
     base_url: "https://q.us-east-1.amazonaws.com"

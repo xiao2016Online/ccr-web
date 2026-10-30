@@ -4,6 +4,7 @@ icon: xai
 category: first_party
 description:
   zh: "xAI Grok 官方 API · Anthropic 兼容端点"
+  zh-Hant: "xAI Grok 官方 API · Anthropic 相容端點"
   en: "Official xAI Grok API · Anthropic-compatible endpoint"
   ja: "xAI Grok 公式 API · Anthropic 互換エンドポイント"
 homepage: "https://x.ai"
@@ -17,6 +18,11 @@ compatibility_notes:
     Anthropic SDK (base_url 设 https://api.x.ai), 新版 REST reference 未列出但端点实测存活
     (2026-07 探测: 空 body 返回 Anthropic 风格 400 校验错误, x-api-key 与 Bearer 均可携带凭据)。
     流式 SSE 字节格式 / tool_use / thinking 支持程度未实测, 待有 key 用户反馈。
+  zh-Hant: |
+    Anthropic 相容端點 (api.x.ai/v1/messages) 為官方半文件化狀態: 舊版遷移指南明確支援
+    Anthropic SDK (base_url 設 https://api.x.ai), 新版 REST reference 未列出但端點實測存活
+    (2026-07 探測: 空 body 回傳 Anthropic 風格 400 驗證錯誤, x-api-key 與 Bearer 均可攜帶憑證)。
+    串流 SSE 位元組格式 / tool_use / thinking 支援程度未實測, 待有 key 使用者回饋。
   en: |
     The Anthropic-compatible endpoint (api.x.ai/v1/messages) is semi-documented: the old migration guide explicitly supports
     the Anthropic SDK (base_url set to https://api.x.ai); the new REST reference doesn't list it, but the endpoint is alive
@@ -32,10 +38,12 @@ endpoints:
   - id: anthropic_endpoint
     label:
       zh: "国际版 · 按量付费 API"
+      zh-Hant: "國際版 · 按量計費 API"
       en: "International · Pay-as-you-go API"
       ja: "国際版 · 従量課金 API"
     description:
       zh: "xAI 官方 Anthropic Messages 兼容端点"
+      zh-Hant: "xAI 官方 Anthropic Messages 相容端點"
       en: "Official xAI Anthropic Messages-compatible endpoint"
       ja: "xAI 公式の Anthropic Messages 互換エンドポイント"
     base_url: "https://api.x.ai"

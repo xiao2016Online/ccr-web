@@ -113,6 +113,10 @@ const MIGRATIONS: &[(u32, &str)] = &[
         26,
         include_str!("../../migrations/026_fix_custom_anthropic_icon.sql"),
     ),
+    (
+        27,
+        include_str!("../../migrations/027_add_slot_schedules.sql"),
+    ),
 ];
 
 pub async fn init_pool(db_path: &Path) -> AppResult<SqlitePool> {
@@ -404,7 +408,7 @@ mod tests {
         run_migrations(&pool).await.expect("migrate fresh");
 
         let versions = applied_versions(&pool).await;
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]);
         assert!(!has_column(&pool, "subscriptions", "supports_thinking_blocks").await);
         assert!(!has_column(&pool, "subscriptions", "thinking_block_field_name").await);
         assert!(has_column(&pool, "requests", "upstream_response_body").await);
@@ -430,6 +434,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(jev.0, 1);
+        // v25: 槽位分时段规则
+        assert!(has_column(&pool, "subscriptions", "slot_schedules").await);
         // v24: 订阅 url_params + systemone_wire
         assert!(has_column(&pool, "subscriptions", "url_params").await);
         assert!(has_column(&pool, "subscriptions", "systemone_wire").await);
@@ -460,7 +466,7 @@ mod tests {
         run_migrations(&pool).await.expect("migrate legacy");
 
         let versions = applied_versions(&pool).await;
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]); // baseline v=1, 然后跑增量
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]); // baseline v=1, 然后跑增量
         assert!(!has_column(&pool, "subscriptions", "supports_thinking_blocks").await);
         assert!(!has_column(&pool, "subscriptions", "thinking_block_field_name").await);
         assert!(has_column(&pool, "requests", "upstream_response_body").await);
@@ -476,7 +482,7 @@ mod tests {
         run_migrations(&pool).await.expect("third run");
 
         let versions = applied_versions(&pool).await;
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]); // 没有重复写
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]); // 没有重复写
     }
 
     /// 在 v4 schema 状态下插一条订阅 (含已 v7 移除的 supports_thinking_blocks 列)。
@@ -542,7 +548,7 @@ mod tests {
         assert!(!has_table(&pool, "subscriptions_new").await);
         assert_eq!(
             applied_versions(&pool).await,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]
         );
 
         let count: (i64,) =

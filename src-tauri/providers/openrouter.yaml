@@ -19,6 +19,7 @@ icon: openrouter
 category: aggregator
 description:
   zh: "OpenRouter 模型路由聚合平台，覆盖 Anthropic / OpenAI / Google / Meta / DeepSeek 等数百款模型"
+  zh-Hant: "OpenRouter 模型路由聚合平台，覆蓋 Anthropic / OpenAI / Google / Meta / DeepSeek 等數百款模型"
   en: "OpenRouter model routing and aggregation platform, covering hundreds of models from Anthropic / OpenAI / Google / Meta / DeepSeek and more"
   ja: "OpenRouter モデルルーティング・アグリゲーションプラットフォーム。Anthropic / OpenAI / Google / Meta / DeepSeek など数百のモデルに対応"
 homepage: "https://openrouter.ai"
@@ -32,10 +33,12 @@ endpoints:
   - id: paygo
     label:
       zh: "全球 · 按量付费 API"
+      zh-Hant: "全球 · 按量計費 API"
       en: "Global · Pay-as-you-go API"
       ja: "グローバル · 従量課金 API"
     description:
       zh: "对话端点, 按 token 转发到对应底层提供商"
+      zh-Hant: "對話端點, 按 token 轉發到對應底層提供商"
       en: "Chat endpoint; forwards requests to the underlying providers, billed per token"
       ja: "チャット用エンドポイント。トークン従量課金で下層のプロバイダへ転送"
     base_url: "https://openrouter.ai/api"
@@ -45,10 +48,12 @@ endpoints:
   - id: systemone
     label:
       zh: "全球 · System One（决策模型）"
+      zh-Hant: "全球 · System One（決策模型）"
       en: "Global · System One (decision models)"
       ja: "グローバル · System One（意思決定モデル）"
     description:
       zh: "/api/v1/systemone, 只用于 model-jev"
+      zh-Hant: "/api/v1/systemone, 只用於 model-jev"
       en: "/api/v1/systemone, for model-jev only"
       ja: "/api/v1/systemone。model-jev 専用"
     base_url: "https://openrouter.ai/api"

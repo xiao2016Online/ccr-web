@@ -118,6 +118,11 @@ fn runtime_file_preferred_language_reaches_the_tui() {
     let without_pref = RuntimeFile::new(Path::new("/data"), Some(23456), None, "s3cret", None);
     let read: discovery::RuntimeInfo = through_json(&without_pref);
     assert_eq!(read.preferred_language, None);
+
+    let zh_hant = RuntimeFile::new(Path::new("/data"), Some(23456), None, "s3cret", None)
+        .with_preferred_language(Some("zh-Hant".into()));
+    let read: discovery::RuntimeInfo = through_json(&zh_hant);
+    assert_eq!(read.preferred_language.as_deref(), Some("zh-Hant"));
 }
 
 #[test]
@@ -175,6 +180,7 @@ fn subscription_matches() {
     assert_eq!(view.provider_display_name, "智谱");
     assert_eq!(view.provider_name(Lang::En), "Zhipu GLM", "provider_names 被改名会静默落回中文快照");
     assert_eq!(view.provider_name(Lang::Ja), "Zhipu GLM（日）");
+    assert_eq!(view.provider_name(Lang::ZhHant), "智譜");
     // 注册表里查不到 (自定义订阅 / yaml 已删) 就用快照。
     let orphan: dto::Subscription = through_json(&SubscriptionDto::from_runtime(&rt, Vec::new(), &HashMap::new()));
     assert_eq!(orphan.provider_name(Lang::En), "智谱");
@@ -233,6 +239,32 @@ fn subscription_detail_fields_match() {
     let balance_cache = view.balance_cache.expect("balance_cache 应该有值");
     assert_eq!(balance_cache.snapshot.entries.len(), 1);
     assert_eq!(balance_cache.snapshot.entries[0].severity, dto::BalanceSeverity::Low);
+}
+
+/// 分时段规则: 后端把 `slot_schedules` / `slot_models_now` 序列化出来, TUI 能认出哪个槽位配了规则,
+/// 并原样显示后端算好的此刻模型 (TUI 自己不求值, 所以不依赖当前时间)。
+#[test]
+fn subscription_slot_schedules_match() {
+    use cc_router_tui::client::dto::Slot;
+    let mut row = SubscriptionRow::test_fixture("zhipu", "default");
+    row.slot_schedules.opus = vec![crate::subscription::schedule::ScheduleRule {
+        days: vec![1, 2, 3, 4, 5, 6, 7],
+        start: "18:00".into(),
+        end: "08:00".into(),
+        model: "night".into(),
+        effort: None,
+    }];
+    let rt = SubscriptionRuntime::from_row(row);
+    let real = SubscriptionDto::from_runtime(&rt, Vec::new(), &HashMap::new());
+    let view: dto::Subscription = through_json(&real);
+
+    assert!(view.slot_is_scheduled(Slot::Opus));
+    assert!(!view.slot_is_scheduled(Slot::Sonnet));
+    assert_eq!(view.slot_now(Slot::Opus), real.slot_models_now.opus.as_deref(), "scheduled slot shows the backend value");
+    assert!(matches!(view.slot_now(Slot::Opus), Some("a" | "night")), "default or the night rule, depending on the clock");
+    // No rule: the configured model, same as the backend's slot_models_now.
+    assert_eq!(view.slot_now(Slot::Sonnet), real.slot_models_now.sonnet.as_deref());
+    assert_eq!(view.slot_now(Slot::Sonnet), Some("b"));
 }
 
 /// 后端的每一个余额告警级别, TUI 都必须认得 —— 落到 `Unknown` 说明 TUI 的枚举漏了一个。
@@ -821,16 +853,16 @@ fn zhipu_provider() -> Provider {
     provider_from_yaml(
         r#"
 id: zhipu
-display_name: { zh: "智谱", en: "Zhipu GLM", ja: "Zhipu GLM（日）" }
-description: { zh: "智谱 AI", en: "Zhipu AI", ja: "Zhipu AI" }
+display_name: { zh: "智谱", zh-Hant: "智譜", en: "Zhipu GLM", ja: "Zhipu GLM（日）" }
+description: { zh: "智谱 AI", zh-Hant: "智譜 AI", en: "Zhipu AI", ja: "Zhipu AI" }
 compatibility: verified
 endpoints:
   - id: default
-    label: { zh: "默认", en: "Default", ja: "デフォルト" }
+    label: { zh: "默认", zh-Hant: "預設", en: "Default", ja: "デフォルト" }
     base_url: "https://open.bigmodel.cn/api/anthropic"
     messages_path: "/v1/messages"
   - id: intl
-    label: { zh: "国际版", en: "International", ja: "国際版" }
+    label: { zh: "国际版", zh-Hant: "國際版", en: "International", ja: "国際版" }
     base_url: "https://intl.bigmodel.cn/api/anthropic"
     messages_path: "/v1/messages"
 default_endpoint: intl

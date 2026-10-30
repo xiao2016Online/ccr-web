@@ -169,7 +169,8 @@ mod tests {
         out
     }
 
-    /// 界面上没有回退: 含中文的字段必须写成 `{zh, en, ja}`, 而且英文里不能再有中文、日文不能照抄中文。
+    /// 界面上没有回退: 含中文的字段必须写成 `{zh, zh-Hant, en, ja}`, 而且英文里不能再有中文、日文不能照抄中文、
+    /// 繁中里不许有简体专用字 (简繁同形如「月之暗面」可以与 zh 相同)。
     /// 纯字符串写法只留给三语都一样的品牌名。
     #[test]
     fn cjk_text_is_translated() {
@@ -182,24 +183,39 @@ mod tests {
                 } else if has_cjk(&t.zh) && t.ja == t.zh {
                     problems.push(format!("{file} {path}: ja 与 zh 相同 ({:?})", t.ja));
                 }
+                let residue = crate::zh_hant_check::simplified_residue(&t.zh_hant);
+                if !residue.is_empty() {
+                    problems.push(format!("{file} {path}: zh-Hant 含简体字 {residue:?} ({:?})", t.zh_hant));
+                }
             }
         }
         assert!(problems.is_empty(), "{} 处未翻译:\n{}", problems.len(), problems.join("\n"));
     }
 
     #[test]
-    fn localized_text_accepts_string_or_all_three_languages() {
+    fn localized_text_accepts_string_or_all_four_languages() {
         let same: LocalizedText = serde_yaml::from_str("DeepSeek").unwrap();
         assert_eq!(same, LocalizedText::same("DeepSeek"));
 
-        let per: LocalizedText = serde_yaml::from_str("{ zh: 国内版, en: China, ja: 中国版 }").unwrap();
-        assert_eq!((per.zh.as_str(), per.en.as_str(), per.ja.as_str()), ("国内版", "China", "中国版"));
+        let per: LocalizedText =
+            serde_yaml::from_str("{ zh: 国内版, zh-Hant: 中國版, en: China, ja: 中国版 }").unwrap();
+        assert_eq!(
+            (per.zh.as_str(), per.zh_hant.as_str(), per.en.as_str(), per.ja.as_str()),
+            ("国内版", "中國版", "China", "中国版")
+        );
 
         // 报错要能指出是哪个键, 否则加 provider 的人只看到一句 "did not match any variant"。
-        let missing = serde_yaml::from_str::<LocalizedText>("{ zh: 国内版, en: China }").unwrap_err();
-        assert!(missing.to_string().contains("`ja`"), "{missing}");
-        let typo = serde_yaml::from_str::<LocalizedText>("{ zh: a, en: b, ja: c, jp: d }").unwrap_err();
+        let missing = serde_yaml::from_str::<LocalizedText>("{ zh: 国内版, en: China, ja: 中国版 }").unwrap_err();
+        assert!(missing.to_string().contains("`zh-Hant`"), "{missing}");
+        let typo = serde_yaml::from_str::<LocalizedText>("{ zh: a, zh-Hant: a, en: b, ja: c, jp: d }").unwrap_err();
         assert!(typo.to_string().contains("`jp`"), "{typo}");
+    }
+
+    #[test]
+    fn localized_text_serializes_zh_hant_with_a_hyphen() {
+        let v = serde_json::to_value(LocalizedText::same("x")).unwrap();
+        assert_eq!(v["zh-Hant"], "x");
+        assert!(v.get("zh_hant").is_none());
     }
 
     const MINIMAL: &str = r#"
@@ -220,10 +236,10 @@ display_name: "T"
 compatibility: verified
 url_params:
   - id: account_id
-    label: {zh: "账户 ID", en: "Account ID", ja: "アカウント ID"}
+    label: {zh: "账户 ID", zh-Hant: "帳戶 ID", en: "Account ID", ja: "アカウント ID"}
     pattern: "^[0-9a-f]{32}$"
   - id: gateway_id
-    label: {zh: "网关 ID", en: "Gateway ID", ja: "ゲートウェイ ID"}
+    label: {zh: "网关 ID", zh-Hant: "閘道 ID", en: "Gateway ID", ja: "ゲートウェイ ID"}
     pattern: "^[A-Za-z0-9_-]{1,64}$"
 endpoints:
   - id: direct

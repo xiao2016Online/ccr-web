@@ -1,7 +1,7 @@
 {
   "name": "cc-router",
   "private": true,
-  "version": "6.3.1",
+  "version": "6.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,10 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "version:set": "node scripts/set-version.mjs",
-    "icon:macos": "node scripts/make-macos-icon.mjs"
+    "icon:macos": "node scripts/make-macos-icon.mjs",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "check:schedule": "node scripts/check-slot-schedule.mjs",
+    "check:onboarding": "node scripts/check-onboarding.mjs"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",
@@ -72,7 +75,7 @@
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.4"
   },
   "pnpm": {
     "overrides": {
@@ -80,7 +83,7 @@
       "js-cookie": ">=3.0.7",
       "uuid@11": ">=11.1.1",
       "uuid@13": ">=13.0.1",
-      "dompurify": "^3.4.16",
+      "dompurify": "^3.4.17",
       "source-map-js": "^1.2.2",
       "@babel/core": "^7.29.6",
       "@codemirror/state": "6.7.1"

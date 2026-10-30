@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { ArrowLeft, ArrowRight, ExternalLink, Check } from "lucide-react";
 import { runtime } from "@/runtime";
@@ -39,10 +39,11 @@ import type {
   ProbeCustomModelsResult,
   RefreshModelListResult,
   SlotEfforts,
-  VirtualModelName,
 } from "@/types";
 import { allSlotsFilled, uniformSlots } from "@/lib/modelSlots";
 import { errorText } from "@/lib/errorText";
+import { bindToConversationVirtualModels } from "@/lib/bindVirtualModels";
+import { resumeWizardAt } from "@/components/onboarding/wizardStore";
 
 type Step = 1 | 2;
 
@@ -397,7 +398,7 @@ export function SubscriptionNewPage() {
       await queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
       await bindToVirtualModelsIfOnboarding(createdId, "messages");
       if (isOnboarding) {
-        navigate("/guide", { replace: true });
+        navigate("/", { replace: true });
         return;
       }
       navigate(returnTo ?? `/subscriptions/${createdId}`);
@@ -457,7 +458,7 @@ export function SubscriptionNewPage() {
       await queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
       await bindToVirtualModelsIfOnboarding(createdId, "messages");
       if (isOnboarding) {
-        navigate("/guide", { replace: true });
+        navigate("/", { replace: true });
         return;
       }
       navigate(returnTo ?? `/subscriptions/${createdId}`);
@@ -552,46 +553,35 @@ export function SubscriptionNewPage() {
     }
   }
 
+  // 引导期 (从引导窗口跳来的 OAuth / 自定义): 保存后并入虚拟模型, 回到引导窗口第 5 步。
+  // 引导由窗口最后一步标记完成, 这里不碰 onboarding 状态。
   async function bindToVirtualModelsIfOnboarding(subscriptionId: string, protocol: EndpointProtocol) {
     if (!isOnboarding) return;
-    const names: VirtualModelName[] =
-      protocol === "systemone"
-        ? ["model-jev"]
-        : ["model-fable", "model-opus", "model-sonnet", "model-haiku", "model-fallback"];
-    await Promise.allSettled(
-      names.map((name) => {
-        const current = vms.data?.find((v) => v.name === name);
-        const merged = Array.from(
-          new Set([...(current?.subscription_ids ?? []), subscriptionId]),
-        );
-        return api.updateVirtualModel(name, {
-          mode: current?.mode ?? "sequential",
-          subscription_ids: merged,
-        });
-      }),
-    );
-
-    await api.completeOnboarding();
+    await bindToConversationVirtualModels(subscriptionId, protocol, vms.data);
+    resumeWizardAt("connect", { subscriptionId, source: "page", importedCount: null });
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["onboarding-state"] }),
       queryClient.invalidateQueries({ queryKey: ["virtual-models"] }),
       queryClient.invalidateQueries({ queryKey: ["subscriptions"] }),
     ]);
   }
 
-  // 引导期从备份导入: 导入已经还原了虚拟模型绑定, 所以只标记引导完成, 不走 bindToVirtualModelsIfOnboarding。
-  // 不在这里跳转: 弹窗接着显示导入报告 (哪些订阅缺 Key 被停用、哪些 OAuth 被跳过), 用户关掉报告后再去 /guide。
-  async function onBackupImported(report: ImportReport) {
+  // 引导期从备份导入: 导入已经还原了虚拟模型绑定, 直接把引导窗口推到第 5 步。
+  // 不在这里跳转: 弹窗接着显示导入报告 (哪些订阅缺 Key 被停用、哪些 OAuth 被跳过), 用户关掉报告后再回主界面。
+  function onBackupImported(report: ImportReport) {
     if (report.imported <= 0) return;
-    try {
-      await api.completeOnboarding();
-      await queryClient.invalidateQueries({ queryKey: ["onboarding-state"] });
-      onboardingDoneByImportRef.current = true;
-    } catch (e) {
-      // 导入本身已成功, 引导标记失败时留在原页, 用户可手动继续
-      console.warn("complete onboarding after import failed", e);
-    }
+    resumeWizardAt("connect", { subscriptionId: null, source: "import", importedCount: report.imported });
+    onboardingDoneByImportRef.current = true;
   }
+
+  // 从引导窗口点厂商卡片跳来时 (?provider=<id>) 预选该厂商, 只做一次
+  const presetProvider = searchParams.get("provider");
+  const presetAppliedRef = useRef(false);
+  useEffect(() => {
+    if (presetAppliedRef.current || !presetProvider || !providers.data) return;
+    presetAppliedRef.current = true;
+    handleProviderChange(presetProvider);
+    // handleProviderChange 读到的 state 此时都还是初始值, 只需在厂商列表到位时跑一次
+  }, [presetProvider, providers.data]);
 
   // 内置路径 step2: 保存 slot
   async function save() {
@@ -604,7 +594,7 @@ export function SubscriptionNewPage() {
     await bindToVirtualModelsIfOnboarding(createdId, endpoint?.protocol ?? "messages");
 
     if (isOnboarding) {
-      navigate("/guide", { replace: true });
+      navigate("/", { replace: true });
       return;
     }
     navigate(returnTo ?? `/subscriptions/${createdId}`);
@@ -712,7 +702,7 @@ export function SubscriptionNewPage() {
       }
       await bindToVirtualModelsIfOnboarding(created.id, created.endpoint_protocol);
       if (isOnboarding) {
-        navigate("/guide", { replace: true });
+        navigate("/", { replace: true });
         return;
       }
       navigate(returnTo ?? `/subscriptions/${created.id}`);
@@ -725,15 +715,18 @@ export function SubscriptionNewPage() {
 
   return (
     <>
-      {!isOnboarding && (
-        <Link
-          to={returnTo ?? "/subscriptions"}
-          className="btn bare sm"
-          style={{ marginBottom: 18, textDecoration: "none" }}
-        >
-          <ArrowLeft size={12} /> {returnTo ? t("subscriptionNew.back") : t("subscriptionNew.backToList")}
-        </Link>
-      )}
+      <Link
+        to={isOnboarding ? "/" : (returnTo ?? "/subscriptions")}
+        className="btn bare sm"
+        style={{ marginBottom: 18, textDecoration: "none" }}
+      >
+        <ArrowLeft size={12} />{" "}
+        {isOnboarding
+          ? t("onboarding.wizard.backToWizard")
+          : returnTo
+            ? t("subscriptionNew.back")
+            : t("subscriptionNew.backToList")}
+      </Link>
 
       <div className="page-header">
         <h1>{isOnboarding ? t("subscriptionNew.welcomeTitle") : t("subscriptionNew.title")}</h1>
@@ -1329,9 +1322,9 @@ export function SubscriptionNewPage() {
           open={importOpen}
           onOpenChange={(v) => {
             setImportOpen(v);
-            if (!v && onboardingDoneByImportRef.current) navigate("/guide", { replace: true });
+            if (!v && onboardingDoneByImportRef.current) navigate("/", { replace: true });
           }}
-          onImported={(r) => void onBackupImported(r)}
+          onImported={onBackupImported}
         />
       )}
 

@@ -2,8 +2,8 @@ import type { Locale } from "@/i18n";
 import type { ProviderInfo, SubscriptionDto } from "@/types";
 
 /**
- * 把 provider yaml 的上屏文字换成界面语言。后端顶层字段是中文、英日文在 translations 里,
- * 且三语齐全 (yaml 解析时强制), 所以这里不做回退。
+ * 把 provider yaml 的上屏文字换成界面语言。后端顶层字段是中文、繁中 / 英日文在 translations 里,
+ * 且四语齐全 (yaml 解析时强制), 所以这里不做回退。
  */
 export function localizeProvider(p: ProviderInfo, locale: Locale): ProviderInfo {
   if (locale === "zh") return p;

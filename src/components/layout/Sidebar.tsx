@@ -2,6 +2,7 @@ import { NavLink, useLocation } from "react-router";
 import { useEffect, useState } from "react";
 import {
   Activity,
+  ArrowRight,
   BarChart3,
   BookOpen,
   DatabaseBackup,
@@ -30,6 +31,9 @@ import { runtime, webLogout, webSession } from "@/runtime";
 import { LogoMark } from "@/components/sketch/LogoMark";
 import { SidebarIcon, type SidebarIconName } from "@/components/sketch/SidebarIcon";
 import { useReleaseNotesDialog } from "@/components/release-notes/ReleaseNotesController";
+import { useOnboardingState } from "@/components/onboarding/useOnboardingState";
+import { useWizard } from "@/components/onboarding/wizardStore";
+import { ONBOARDING_STEPS, stepIndex } from "@/lib/onboardingFlow";
 import { useTheme, type ColorMode } from "@/hooks/useTheme";
 import { PixelIcon } from "@/components/win2k/PixelIcon";
 import { isPlainBased, type ThemeArt } from "@/themes";
@@ -89,6 +93,10 @@ export function Sidebar() {
   const notes = useReleaseNotesDialog();
   const { art, mode, setMode } = useTheme();
   const location = useLocation();
+  const onboarding = useOnboardingState();
+  const wizard = useWizard();
+  // 引导被「稍后再设置」关掉、又还没走完: 侧栏底部给一个回去的入口
+  const showResume = onboarding.data?.completed === false && wizard.state.dismissed;
 
   const subsCount = subs.data?.length ?? 0;
   const running = proxy.data?.running ?? false;
@@ -184,6 +192,17 @@ export function Sidebar() {
       <div className="nav-footer">
         {/* 与品牌区下方对称的手画波浪线 */}
         {art === "sketch" && <SketchRule className="foot-rule" />}
+        {showResume && (
+          <button type="button" className="ob-resume" onClick={wizard.reopen}>
+            <span>
+              {t("onboarding.wizard.resume", {
+                n: stepIndex(wizard.state.step) + 1,
+                total: ONBOARDING_STEPS.length,
+              })}
+            </span>
+            <ArrowRight size={14} aria-hidden="true" />
+          </button>
+        )}
         {(notes.hasNotes || showLogout) && (
           <div className="nav-extra">
             {/* 明暗模式切换: 与其他导航项同款式 (点击在 跟随系统 → 浅色 → 暗色 间轮换) */}

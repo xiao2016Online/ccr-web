@@ -12,6 +12,7 @@ display_name: "TypeSafe"
 category: first_party
 description:
   zh: "TypeSafe 的 Jev 决策模型 (System One), 只用于 model-jev"
+  zh-Hant: "TypeSafe 的 Jev 決策模型 (System One), 只用於 model-jev"
   en: "TypeSafe's Jev decision model (System One), for model-jev only"
   ja: "TypeSafe の Jev 意思決定モデル（System One）。model-jev 専用"
 homepage: "https://typesafe.ai"
@@ -21,6 +22,9 @@ compatibility_notes:
   zh: |
     1. Jev 不生成文本, 不能给 Claude Code 对话用; 订阅只能绑定到 model-jev, 经 POST /v1/systemone 调用.
     2. 模型名手动输入: jev-latest (稳定) 或 jev-preview (预览).
+  zh-Hant: |
+    1. Jev 不生成文字, 不能給 Claude Code 對話用; 訂閱只能綁定到 model-jev, 經 POST /v1/systemone 呼叫.
+    2. 模型名手動輸入: jev-latest (穩定) 或 jev-preview (預覽).
   en: |
     1. Jev does not generate text and cannot be used for Claude Code chat; subscriptions can only be bound
        to model-jev and are called through POST /v1/systemone.
@@ -34,6 +38,7 @@ endpoints:
   - id: default
     label:
       zh: "全球 · System One"
+      zh-Hant: "全球 · System One"
       en: "Global · System One"
       ja: "グローバル · System One"
     base_url: "https://api.typesafe.ai"

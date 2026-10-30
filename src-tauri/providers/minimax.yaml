@@ -4,6 +4,7 @@ icon: minimax
 category: first_party
 description:
   zh: "MiniMax M3 / M2 系列模型"
+  zh-Hant: "MiniMax M3 / M2 系列模型"
   en: "MiniMax M3 / M2 series models"
   ja: "MiniMax M3 / M2 シリーズのモデル"
 homepage: "https://platform.minimax.io"
@@ -17,10 +18,12 @@ endpoints:
   - id: china_coding_plan
     label:
       zh: "国内版 · Coding Plan 订阅"
+      zh-Hant: "中國版 · Coding Plan 訂閱"
       en: "China · Coding Plan subscription"
       ja: "中国版 · Coding Plan サブスクリプション"
     description:
       zh: "订阅制，通过 MiniMax Coding Plan 购买（国内加速）"
+      zh-Hant: "訂閱制，透過 MiniMax Coding Plan 購買（中國大陸加速）"
       en: "Subscription-based, purchased via MiniMax Coding Plan (accelerated in China)"
       ja: "サブスクリプション制。MiniMax Coding Plan で購入（中国国内向け高速化）"
     base_url: "https://api.minimaxi.com/anthropic"
@@ -31,10 +34,12 @@ endpoints:
   - id: global_coding_plan
     label:
       zh: "国际版 · Coding Plan 订阅"
+      zh-Hant: "國際版 · Coding Plan 訂閱"
       en: "International · Coding Plan subscription"
       ja: "国際版 · Coding Plan サブスクリプション"
     description:
       zh: "订阅制，通过 MiniMax Coding Plan 购买"
+      zh-Hant: "訂閱制，透過 MiniMax Coding Plan 購買"
       en: "Subscription-based, purchased via MiniMax Coding Plan"
       ja: "サブスクリプション制。MiniMax Coding Plan で購入"
     base_url: "https://api.minimax.io/anthropic"
@@ -45,10 +50,12 @@ endpoints:
   - id: china_paygo
     label:
       zh: "国内版 · 按量付费 API"
+      zh-Hant: "中國版 · 按量計費 API"
       en: "China · Pay-as-you-go API"
       ja: "中国版 · 従量課金 API"
     description:
       zh: "国内加速访问"
+      zh-Hant: "中國大陸加速存取"
       en: "Accelerated access in China"
       ja: "中国国内向け高速アクセス"
     base_url: "https://api.minimaxi.com/anthropic"
@@ -59,10 +66,12 @@ endpoints:
   - id: global_paygo
     label:
       zh: "国际版 · 按量付费 API"
+      zh-Hant: "國際版 · 按量計費 API"
       en: "International · Pay-as-you-go API"
       ja: "国際版 · 従量課金 API"
     description:
       zh: "按 token 计费"
+      zh-Hant: "按 token 計費"
       en: "Billed per token"
       ja: "トークン従量課金"
     base_url: "https://api.minimax.io/anthropic"

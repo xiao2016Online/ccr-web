@@ -17,6 +17,7 @@ import type {
   EventFilters,
   ExportSummary,
   HeatmapDayDto,
+  HostClockDto,
   ImportOptions,
   ImportPreview,
   ImportReport,
@@ -39,6 +40,7 @@ import type {
   RestartProxyResult,
   Settings,
   SettingsPatch,
+  SlotSchedules,
   StatsRange,
   StorageStatsDto,
   SubscriptionDto,
@@ -84,6 +86,9 @@ export const api = {
     invoke<SubscriptionDto>("update_token_quotas", { id, quotas }),
   resetTotalQuotaUsage: (id: string) =>
     invoke<SubscriptionDto>("reset_total_quota_usage", { id }),
+  updateSlotSchedules: (id: string, schedules: SlotSchedules) =>
+    invoke<SubscriptionDto>("update_slot_schedules", { id, schedules }),
+  getHostClock: () => invoke<HostClockDto>("get_host_clock"),
 
   // ChatGPT OAuth (Phase 1, OpenAI Codex provider)
   startChatGptDeviceFlow: () =>

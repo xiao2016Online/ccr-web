@@ -172,6 +172,8 @@ mod tests {
             endpoint_protocol: "messages".into(),
             model_slots: ModelSlots { fable: "d".into(), opus: "a".into(), sonnet: "b".into(), haiku: "c".into(), fallback: String::new(), jev: String::new() },
             slot_efforts: Default::default(),
+            slot_models_now: Default::default(),
+            slot_schedules: Default::default(),
             referenced_by: vec![],
             balance_supported: false,
             balance_cache: None,

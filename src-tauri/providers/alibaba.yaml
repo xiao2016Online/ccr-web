@@ -1,12 +1,14 @@
 id: alibaba
 display_name:
   zh: "阿里云百炼"
+  zh-Hant: "阿里雲百鍊"
   en: "Alibaba Cloud Model Studio"
   ja: "Alibaba Cloud Model Studio"
 icon: alibaba
 category: first_party
 description:
   zh: "阿里云 Model Studio（DashScope）· Anthropic 兼容端点"
+  zh-Hant: "阿里雲 Model Studio（DashScope）· Anthropic 相容端點"
   en: "Alibaba Cloud Model Studio (DashScope) · Anthropic-compatible endpoint"
   ja: "Alibaba Cloud Model Studio（DashScope）· Anthropic 互換エンドポイント"
 homepage: "https://bailian.console.aliyun.com"
@@ -19,10 +21,12 @@ endpoints:
   - id: token_plan_team_beijing
     label:
       zh: "国内版 · Token Plan 团队版"
+      zh-Hant: "中國版 · Token Plan 團隊版"
       en: "China · Token Plan (Team)"
       ja: "中国版 · Token Plan チーム版"
     description:
       zh: "团队版 token plan 订阅"
+      zh-Hant: "團隊版 token plan 訂閱"
       en: "Team Token Plan subscription"
       ja: "チーム版 Token Plan サブスクリプション"
     base_url: "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic"
@@ -33,10 +37,12 @@ endpoints:
   - id: dashscope_beijing
     label:
       zh: "国内版 · 按量付费 API"
+      zh-Hant: "中國版 · 按量計費 API"
       en: "China · Pay-as-you-go API"
       ja: "中国版 · 従量課金 API"
     description:
       zh: "国内访问, 延迟低"
+      zh-Hant: "中國大陸存取, 延遲低"
       en: "Low latency from mainland China"
       ja: "中国国内からのアクセス向け、低遅延"
     base_url: "https://dashscope.aliyuncs.com/apps/anthropic"
@@ -47,10 +53,12 @@ endpoints:
   - id: dashscope_singapore
     label:
       zh: "国际版 · 按量付费 API · 新加坡"
+      zh-Hant: "國際版 · 按量計費 API · 新加坡"
       en: "International · Pay-as-you-go API · Singapore"
       ja: "国際版 · 従量課金 API · シンガポール"
     description:
       zh: "国际用户推荐"
+      zh-Hant: "國際使用者推薦"
       en: "Recommended for users outside China"
       ja: "中国国外のユーザーにおすすめ"
     base_url: "https://dashscope-intl.aliyuncs.com/apps/anthropic"
@@ -61,10 +69,12 @@ endpoints:
   - id: coding_plan
     label:
       zh: "国内版 · Coding Plan 订阅"
+      zh-Hant: "中國版 · Coding Plan 訂閱"
       en: "China · Coding Plan subscription"
       ja: "中国版 · Coding Plan サブスクリプション"
     description:
       zh: "旧订阅"
+      zh-Hant: "舊訂閱"
       en: "Legacy subscription"
       ja: "旧サブスクリプション"
     base_url: "https://coding.dashscope.aliyuncs.com/apps/anthropic"

@@ -1,0 +1,17 @@
+[
+  {"name": "工作日白天命中", "default": "", "rules": [{"days": [1, 2, 3, 4, 5], "start": "08:00", "end": "18:00", "model": "deepseek-4.1"}, {"days": [1, 2, 3, 4, 5], "start": "18:00", "end": "08:00", "model": "qwen-max"}], "at": {"weekday": 3, "time": "10:00"}, "expect": "deepseek-4.1"},
+  {"name": "结束端点不含", "default": "", "rules": [{"days": [1, 2, 3, 4, 5], "start": "08:00", "end": "18:00", "model": "deepseek-4.1"}, {"days": [1, 2, 3, 4, 5], "start": "18:00", "end": "08:00", "model": "qwen-max"}], "at": {"weekday": 3, "time": "18:00"}, "expect": "qwen-max"},
+  {"name": "开始端点包含", "default": "", "rules": [{"days": [1, 2, 3, 4, 5], "start": "08:00", "end": "18:00", "model": "deepseek-4.1"}], "at": {"weekday": 3, "time": "08:00"}, "expect": "deepseek-4.1"},
+  {"name": "周五夜跨到周六", "default": "", "rules": [{"days": [1, 2, 3, 4, 5], "start": "18:00", "end": "08:00", "model": "qwen-max"}], "at": {"weekday": 6, "time": "07:30"}, "expect": "qwen-max"},
+  {"name": "周六 08:00 已结束", "default": "", "rules": [{"days": [1, 2, 3, 4, 5], "start": "18:00", "end": "08:00", "model": "qwen-max"}], "at": {"weekday": 6, "time": "08:00"}, "expect": null},
+  {"name": "周日夜不属工作日", "default": "", "rules": [{"days": [1, 2, 3, 4, 5], "start": "18:00", "end": "08:00", "model": "qwen-max"}], "at": {"weekday": 1, "time": "07:30"}, "expect": null},
+  {"name": "周日规则跨到周一", "default": "", "rules": [{"days": [7], "start": "18:00", "end": "08:00", "model": "x"}], "at": {"weekday": 1, "time": "07:30"}, "expect": "x"},
+  {"name": "未命中回默认", "default": "mimo", "rules": [{"days": [1, 2, 3, 4, 5], "start": "08:00", "end": "18:00", "model": "deepseek-4.1"}], "at": {"weekday": 6, "time": "12:00"}, "expect": "mimo"},
+  {"name": "默认空白视为空", "default": "  ", "rules": [], "at": {"weekday": 2, "time": "12:00"}, "expect": null},
+  {"name": "顺序优先", "default": "", "rules": [{"days": [1, 2, 3, 4, 5, 6, 7], "start": "00:00", "end": "24:00", "model": "a"}, {"days": [1, 2, 3, 4, 5, 6, 7], "start": "10:00", "end": "11:00", "model": "b"}], "at": {"weekday": 2, "time": "10:30"}, "expect": "a"},
+  {"name": "24:00 覆盖 23:30", "default": "", "rules": [{"days": [1, 2, 3, 4, 5, 6, 7], "start": "00:00", "end": "24:00", "model": "a"}], "at": {"weekday": 4, "time": "23:30"}, "expect": "a"},
+  {"name": "18:00–24:00 不跨零点", "default": "", "rules": [{"days": [2], "start": "18:00", "end": "24:00", "model": "a"}], "at": {"weekday": 3, "time": "00:00"}, "expect": null},
+  {"name": "00:30 半点", "default": "", "rules": [{"days": [1, 2, 3, 4, 5, 6, 7], "start": "00:30", "end": "08:30", "model": "p"}], "at": {"weekday": 2, "time": "00:00"}, "expect": null},
+  {"name": "00:30 半点命中", "default": "", "rules": [{"days": [1, 2, 3, 4, 5, 6, 7], "start": "00:30", "end": "08:30", "model": "p"}], "at": {"weekday": 2, "time": "00:30"}, "expect": "p"},
+  {"name": "命中规则模型空白则落到后面的规则", "default": "d", "rules": [{"days": [1, 2, 3, 4, 5, 6, 7], "start": "00:00", "end": "24:00", "model": "  "}, {"days": [1, 2, 3, 4, 5, 6, 7], "start": "00:00", "end": "24:00", "model": "b"}], "at": {"weekday": 3, "time": "12:00"}, "expect": "b"}
+]

@@ -29,6 +29,7 @@ use crate::proxy::pipeline::{truncate_body, ERROR_BODY_LIMIT};
 use crate::proxy::retry::{classify_response, ShouldRetry};
 use crate::proxy::tool_log::ToolLogFields;
 use crate::subscription::model::{SubscriptionRow, SubscriptionRuntime};
+use crate::subscription::schedule::WallClock;
 use crate::subscription::state_machine;
 use crate::virtual_model::VirtualModelName;
 use std::time::Instant;
@@ -429,7 +430,15 @@ pub async fn dispatch(state: &AppState, raw_body: Bytes, client_model: String, c
         _ => None,
     };
     let subs_map = state.subscriptions.read().await.clone();
-    let order = build_candidate_order(&vm_config, &subs_map, Utc::now(), pinned).await;
+    let order = build_candidate_order(
+        &vm_config,
+        &subs_map,
+        Utc::now(),
+        // jev has no four-slot mapping, so the wall clock never filters here.
+        WallClock::now(),
+        pinned,
+    )
+    .await;
     drop(subs_map);
     if let Some(idx) = order.chosen_index {
         if let Some(cfg) = state.virtual_models.write().await.get_mut(&vm) {

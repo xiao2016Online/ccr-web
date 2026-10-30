@@ -1,54 +1,65 @@
 //! 托盘菜单的语言与文案。
 //!
-//! 刻意不引 Rust i18n 框架: 文案是 `TrayStrings` 的三个 `const`, 漏字段即编译失败,
+//! 刻意不引 Rust i18n 框架: 文案是 `TrayStrings` 的四个 `const`, 漏字段即编译失败,
 //! 带参数的文案用 `fn` 指针 (与 cc-router-tui 的 `Strings` 同一做法)。
 
 /// 托盘菜单语言，与前端 `src/i18n/index.tsx` 的 `Locale` 一一对应。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayLocale {
     Zh,
+    ZhHant,
     En,
     Ja,
 }
 
 impl TrayLocale {
-    /// `settings.preferred_language`（"system" / "zh" / "en" / "ja"）→ 实际语言。
+    /// `settings.preferred_language`（"system" / "zh" / "zh-Hant" / "en" / "ja"）→ 实际语言。
     pub fn from_pref(pref: &str) -> Self {
         Self::resolve(pref, tauri_plugin_os::locale().as_deref())
     }
 
     /// `from_pref` 的纯函数版本：系统语言标签显式传入而不是直接读 OS，
     /// 这样映射规则在任何平台的 CI 上都能单测。
-    ///
-    /// 映射规则必须与前端 `src/i18n/index.tsx::detectSystemLocale()` 逐字一致，
-    /// 否则「跟随系统」时托盘和 UI 会显示两种语言：
-    /// `zh*` → 中文，`ja*` → 日本語，其余（含取不到 locale）→ English。
     fn resolve(pref: &str, system_tag: Option<&str>) -> Self {
         match pref {
             "zh" => Self::Zh,
+            "zh-Hant" => Self::ZhHant,
             "en" => Self::En,
             "ja" => Self::Ja,
-            // "system"、空串、以及任何未知值都走系统探测 —— 前端 resolveLocale 对
-            // undefined / "system" 同样落到 detectSystemLocale()。
-            _ => match system_tag {
-                None => Self::En,
-                Some(tag) => {
-                    let lower = tag.to_ascii_lowercase();
-                    if lower.starts_with("zh") {
-                        Self::Zh
-                    } else if lower.starts_with("ja") {
-                        Self::Ja
-                    } else {
-                        Self::En
-                    }
+            // "system"、空串、以及任何未知值都走系统探测 —— 前端 resolvePref 同样如此。
+            _ => system_tag.map_or(Self::En, Self::from_tag),
+        }
+    }
+
+    /// 系统语言标签 → 语言。与前端 `src/i18n/localeTag.ts::localeFromTag`、TUI `Lang::from_tag`
+    /// 是同一条规则, 由仓库根 `src/i18n/locale-cases.json` 锁住 —— 改规则先改用例表。
+    /// 小写、`_`→`-`、截掉 `.编码` / `@修饰` 后按子标签判定; 书写系统 (hant / hans) 优先于地区。
+    fn from_tag(tag: &str) -> Self {
+        let lower = tag.trim().to_ascii_lowercase().replace('_', "-");
+        let norm = lower.split(['.', '@']).next().unwrap_or("");
+        let parts: Vec<&str> = norm.split('-').filter(|p| !p.is_empty()).collect();
+        match parts.first().copied() {
+            // 粤语 (`yue`, macOS 的「粵語（繁體）」) 同样判定, 什么都不带时默认繁中。
+            Some(lang @ ("zh" | "yue")) => {
+                if parts.contains(&"hant") {
+                    Self::ZhHant
+                } else if parts.contains(&"hans") {
+                    Self::Zh
+                } else if parts.iter().any(|p| matches!(*p, "tw" | "hk" | "mo")) || lang == "yue" {
+                    Self::ZhHant
+                } else {
+                    Self::Zh
                 }
-            },
+            }
+            Some("ja") => Self::Ja,
+            _ => Self::En,
         }
     }
 
     pub fn strings(self) -> &'static TrayStrings {
         match self {
             Self::Zh => &ZH,
+            Self::ZhHant => &ZH_HANT,
             Self::En => &EN,
             Self::Ja => &JA,
         }
@@ -98,6 +109,35 @@ pub const ZH: TrayStrings = TrayStrings {
         let mut s = String::from(if running { "cc-router · 运行中" } else { "cc-router · 代理未运行" });
         if down > 0 {
             s.push_str(&format!(" · {down} 个订阅不可用"));
+        }
+        if has_update {
+            s.push_str(" · 有新版本");
+        }
+        s
+    },
+};
+
+pub const ZH_HANT: TrayStrings = TrayStrings {
+    status_starting: "代理啟動中…",
+    status_running: |addr| format!("● 代理執行中 · {addr}"),
+    status_stopped: "○ 代理未執行",
+    subs_none: "還沒有訂閱",
+    subs_all_disabled: "訂閱已全部停用",
+    subs_ok: |n| format!("{n} 個訂閱 · 全部可用"),
+    subs_some_down: |n, down| format!("{n} 個訂閱 · {down} 個無法使用"),
+    show_window: "顯示主視窗",
+    open_live: "即時路由",
+    open_logs: "請求紀錄",
+    copy_env: "複製 Claude Code 環境變數",
+    copied: "✓ 已複製到剪貼簿",
+    check_update: "檢查更新…",
+    update_available: |v| format!("⬆ 有新版本 v{v} · 查看"),
+    autostart: "開機時自動啟動",
+    quit: "結束 cc-router",
+    tooltip: |running, down, has_update| {
+        let mut s = String::from(if running { "cc-router · 執行中" } else { "cc-router · 代理未執行" });
+        if down > 0 {
+            s.push_str(&format!(" · {down} 個訂閱無法使用"));
         }
         if has_update {
             s.push_str(" · 有新版本");
@@ -185,32 +225,8 @@ mod tests {
         assert_eq!(TrayLocale::resolve("ja", Some("zh-CN")), TrayLocale::Ja);
         // 显式选择时根本不该看系统 locale, 取不到也无所谓
         assert_eq!(TrayLocale::resolve("ja", None), TrayLocale::Ja);
-    }
-
-    /// 这组断言是与前端 src/i18n/index.tsx::detectSystemLocale() 的契约,
-    /// 改任何一条之前先去看那个函数。
-    #[test]
-    fn system_pref_matches_frontend_detection_rules() {
-        assert_eq!(TrayLocale::resolve("system", Some("zh-CN")), TrayLocale::Zh);
-        assert_eq!(
-            TrayLocale::resolve("system", Some("zh-Hans-CN")),
-            TrayLocale::Zh
-        );
-        assert_eq!(
-            TrayLocale::resolve("system", Some("zh-Hant-TW")),
-            TrayLocale::Zh
-        );
-        assert_eq!(TrayLocale::resolve("system", Some("ja-JP")), TrayLocale::Ja);
-        assert_eq!(TrayLocale::resolve("system", Some("en-US")), TrayLocale::En);
-        assert_eq!(TrayLocale::resolve("system", Some("de-DE")), TrayLocale::En);
-        assert_eq!(TrayLocale::resolve("system", Some("ko-KR")), TrayLocale::En);
-    }
-
-    #[test]
-    fn locale_tag_matching_is_case_insensitive() {
-        // sys_locale 在不同 OS 上大小写不统一, 前端 detectSystemLocale 也做了 toLowerCase
-        assert_eq!(TrayLocale::resolve("system", Some("ZH-CN")), TrayLocale::Zh);
-        assert_eq!(TrayLocale::resolve("system", Some("Ja-jp")), TrayLocale::Ja);
+        assert_eq!(TrayLocale::resolve("zh-Hant", Some("en-US")), TrayLocale::ZhHant);
+        assert_eq!(TrayLocale::resolve("zh", Some("zh-TW")), TrayLocale::Zh);
     }
 
     #[test]
@@ -220,12 +236,44 @@ mod tests {
         // 手改 settings.json 塞了非法值, 不能 panic, 走系统探测
         assert_eq!(TrayLocale::resolve("klingon", Some("zh-CN")), TrayLocale::Zh);
         assert_eq!(TrayLocale::resolve("klingon", None), TrayLocale::En);
+        assert_eq!(TrayLocale::resolve("fr", Some("zh-HK")), TrayLocale::ZhHant);
+    }
+
+    /// 与前端 `src/i18n/localeTag.ts::localeFromTag`、TUI `Lang::from_tag` 的契约: 三处读同一张用例表。
+    #[test]
+    fn system_tags_follow_the_shared_rule() {
+        for c in crate::zh_hant_check::locale_cases() {
+            let want = match c.expect.as_str() {
+                "zh" => TrayLocale::Zh,
+                "zh-Hant" => TrayLocale::ZhHant,
+                "en" => TrayLocale::En,
+                "ja" => TrayLocale::Ja,
+                other => panic!("locale-cases.json 里有未知语言 {other}"),
+            };
+            assert_eq!(TrayLocale::from_tag(&c.tag), want, "tag {:?}", c.tag);
+            assert_eq!(TrayLocale::resolve("system", Some(&c.tag)), want, "tag {:?}", c.tag);
+        }
+    }
+
+    #[test]
+    fn zh_hant_has_no_simplified_residue() {
+        let block = crate::zh_hant_check::const_block(include_str!("strings.rs"), "ZH_HANT");
+        let residue = crate::zh_hant_check::simplified_residue(&block);
+        assert!(residue.is_empty(), "ZH_HANT 里有简体字: {residue:?}");
+    }
+
+    #[test]
+    fn zh_hant_tooltip_mentions_only_what_is_wrong() {
+        let t = ZH_HANT.tooltip;
+        assert_eq!(t(true, 0, false), "cc-router · 執行中");
+        assert_eq!(t(true, 2, false), "cc-router · 執行中 · 2 個訂閱無法使用");
+        assert_eq!(t(false, 0, true), "cc-router · 代理未執行 · 有新版本");
     }
 
     /// 加语言 / 改文案时填了空串 -> 空白菜单项, 这里兜住。
     #[test]
     fn every_locale_has_non_empty_labels() {
-        for locale in [TrayLocale::Zh, TrayLocale::En, TrayLocale::Ja] {
+        for locale in [TrayLocale::Zh, TrayLocale::ZhHant, TrayLocale::En, TrayLocale::Ja] {
             let s = locale.strings();
             let fixed = [
                 s.status_starting,

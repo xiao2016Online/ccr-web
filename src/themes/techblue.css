@@ -243,3 +243,106 @@
 :where([data-theme="techblue"]) input[type="radio"] {
   accent-color: var(--accent);
 }
+
+/* ------------------------------------------------------------
+ * 手绘主题的语义色板 (--fill-*) 在服务器版里映射到同一族颜色,
+ * 避免新组件 (时段色条 / 路由图 / 引导窗口) 回落出绿、黄、橙。
+ * 规则: 描边用深蓝灰, "成功/强调"用蓝, "警告"用浅蓝灰, "错误"用紫,
+ *       分类色按蓝 -> 紫的色阶区分, 中性用灰。
+ * ------------------------------------------------------------ */
+:root:where([data-theme="techblue"]) {
+  /* 手绘主题用 --stroke 做"墨线"描边; 科技蓝下统一成浅灰蓝, 避免出现黑框 */
+  --stroke: #cbd5e1;
+
+  /* 浅色填充 (卡片/色条底色) */
+  --fill-sky:       #dbeafe;
+  --fill-oat:       #eef2f8;
+  --fill-cactus:    #dbeafe;
+  --fill-heather:   #ede9fe;
+  --fill-coral:     #ede9fe;
+  --fill-butter:    #e0f2fe;
+  --fill-clay-deep: #2563eb;
+  --fill-nose:      #c4b5fd;
+  --fill-stone:     #e2e8f0;
+
+  /* 对应的深色描边/进度条 */
+  --fill-sky-bar:       #1d4ed8;
+  --fill-oat-bar:       #64748b;
+  --fill-cactus-bar:    #2563eb;
+  --fill-heather-bar:   #6d28d9;
+  --fill-coral-bar:     #7c3aed;
+  --fill-butter-bar:    #0369a1;
+  --fill-clay-deep-bar: #1e40af;
+  --fill-nose-bar:      #8b5cf6;
+  --fill-stone-bar:     #94a3b8;
+
+  --shadow-ink: 3px 3px 0 var(--line-2);
+
+  /* 虚拟模型分类色: 蓝 -> 浅青蓝的阶梯, 决策模型用紫 */
+  --vm-fable:    #1e40af;
+  --vm-opus:     #2563eb;
+  --vm-sonnet:   #3b82f6;
+  --vm-haiku:    #7dd3fc;
+  --vm-fallback: #94a3b8;
+  --vm-jev:      #8b5cf6;
+}
+
+.dark:where([data-theme="techblue"]) {
+  --stroke: #2c3c5e;
+
+  --fill-sky:       #16233a;
+  --fill-oat:       #16223a;
+  --fill-cactus:    #16233a;
+  --fill-heather:   #2a2145;
+  --fill-coral:     #2a2145;
+  --fill-butter:    #10243a;
+  --fill-clay-deep: #3b82f6;
+  --fill-nose:      #4c1d95;
+  --fill-stone:     #1e2a44;
+
+  --fill-sky-bar:       #60a5fa;
+  --fill-oat-bar:       #94a3b8;
+  --fill-cactus-bar:    #3b82f6;
+  --fill-heather-bar:   #a78bfa;
+  --fill-coral-bar:     #c4b5fd;
+  --fill-butter-bar:    #7dd3fc;
+  --fill-clay-deep-bar: #93c5fd;
+  --fill-nose-bar:      #c4b5fd;
+  --fill-stone-bar:     #64748b;
+
+  --shadow-ink: 3px 3px 0 var(--line-2);
+
+  --vm-fable:    #93c5fd;
+  --vm-opus:     #3b82f6;
+  --vm-sonnet:   #60a5fa;
+  --vm-haiku:    #7dd3fc;
+  --vm-fallback: #64748b;
+  --vm-jev:      #c4b5fd;
+}
+
+/* 引导窗口第 1 步的主题预览缩略图 (styles.css 里只有 sketch/classic/win2000 三套) */
+.pv-techblue { background: #f3f6fb; border-color: #e2e8f0; }
+.pv-techblue .pv-bar { background: #ffffff; border-bottom: 1px solid #e2e8f0; }
+.pv-techblue .pv-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+.pv-techblue .pv-btn { background: #2563eb; border-radius: 5px; }
+.dark .pv-techblue { background: #0a1120; border-color: #1e2a44; }
+.dark .pv-techblue .pv-bar { background: #101a2e; border-bottom-color: #1e2a44; }
+.dark .pv-techblue .pv-card { background: #16223a; border-color: #1e2a44; }
+.dark .pv-techblue .pv-btn { background: #3b82f6; }
+
+/* 虚拟模型页的「查看时刻」控件: 选中态原本是墨黑底 */
+:where([data-theme="techblue"]) .vm-time-now[aria-pressed="true"],
+:where([data-theme="techblue"]) .vm-time-days button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+:where([data-theme="techblue"]) .vm-time-now {
+  box-shadow: none;
+}
+
+/* 「查看时刻」条: 上游用 2px 墨线描边 + 硬投影, 服务器版改成常规细边框 */
+:where([data-theme="techblue"]) .vm-time {
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-sm);
+}

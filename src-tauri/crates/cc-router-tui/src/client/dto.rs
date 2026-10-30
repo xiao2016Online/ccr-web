@@ -77,7 +77,7 @@ pub struct Subscription {
     pub display_name: String,
     /// 创建时写进 DB 的厂商名快照 (中文); 显示一律走 [`Subscription::provider_name`]。
     pub provider_display_name: String,
-    /// 内置厂商的三语名字 (后端按 yaml 现查); 自定义订阅与 yaml 已删的厂商没有这个字段。
+    /// 内置厂商的多语名字 (后端按 yaml 现查); 自定义订阅与 yaml 已删的厂商没有这个字段。
     #[serde(default)]
     pub provider_names: Option<LocalizedName>,
     pub enabled: bool,
@@ -100,6 +100,12 @@ pub struct Subscription {
     pub model_slots: ModelSlots,
     #[serde(default)]
     pub slot_efforts: SlotEfforts,
+    /// 各槽位此刻生效的模型 (后端按本机时间算好), TUI 不自己求值时段规则。老后端缺字段 = 全空。
+    #[serde(default)]
+    pub slot_models_now: SlotModelsNow,
+    /// 每槽位的时段规则条数 (只关心有没有规则, 规则本身不解析)。
+    #[serde(default)]
+    pub slot_schedules: SlotScheduleCounts,
     #[serde(default)]
     pub referenced_by: Vec<String>,
     #[serde(default)]
@@ -108,6 +114,74 @@ pub struct Subscription {
     pub balance_cache: Option<BalanceCache>,
     #[serde(default)]
     pub model_cache: Option<ModelCache>,
+}
+
+/// 后端 `SubscriptionDto.slot_models_now`: 各槽位此刻实际生效的模型, `None` = 此刻为空。
+/// 后端总是带齐四个键; `Default` 给老后端 (缺字段) 用。
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct SlotModelsNow {
+    #[serde(default)]
+    pub fable: Option<String>,
+    #[serde(default)]
+    pub opus: Option<String>,
+    #[serde(default)]
+    pub sonnet: Option<String>,
+    #[serde(default)]
+    pub haiku: Option<String>,
+}
+
+/// 后端 `SubscriptionDto.slot_schedules` 只取每个槽位的规则条数: 规则体 (`IgnoredAny`) 不解析。
+/// 没有规则的槽位后端省略该键。
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct SlotScheduleCounts {
+    #[serde(default)]
+    pub fable: Vec<serde::de::IgnoredAny>,
+    #[serde(default)]
+    pub opus: Vec<serde::de::IgnoredAny>,
+    #[serde(default)]
+    pub sonnet: Vec<serde::de::IgnoredAny>,
+    #[serde(default)]
+    pub haiku: Vec<serde::de::IgnoredAny>,
+}
+
+// `IgnoredAny` 只实现了 `PartialEq` (相等恒真), 没实现 `Eq`; `Subscription` 要 `Eq`, 手写标记。
+impl Eq for SlotScheduleCounts {}
+
+impl SlotScheduleCounts {
+    pub fn len(&self, slot: Slot) -> usize {
+        match slot {
+            Slot::Fable => self.fable.len(),
+            Slot::Opus => self.opus.len(),
+            Slot::Sonnet => self.sonnet.len(),
+            Slot::Haiku => self.haiku.len(),
+            Slot::Fallback | Slot::Jev => 0,
+        }
+    }
+}
+
+impl Subscription {
+    /// 这个槽位是否配了时段规则 (兜底槽 / Jev 槽没有时段规则)。
+    pub fn slot_is_scheduled(&self, slot: Slot) -> bool {
+        self.slot_schedules.len(slot) > 0
+    }
+
+    /// 槽位此刻生效的模型。配了规则的槽位读后端算好的 `slot_models_now` (空 = 此刻不可用);
+    /// 没配规则的槽位就是槽位自己的默认值 (空串 = `None`), 与后端求值结果一致, 也不依赖老后端
+    /// 缺不缺 `slot_models_now`。
+    pub fn slot_now(&self, slot: Slot) -> Option<&str> {
+        if self.slot_is_scheduled(slot) {
+            let now = &self.slot_models_now;
+            match slot {
+                Slot::Fable => now.fable.as_deref(),
+                Slot::Opus => now.opus.as_deref(),
+                Slot::Sonnet => now.sonnet.as_deref(),
+                Slot::Haiku => now.haiku.as_deref(),
+                Slot::Fallback | Slot::Jev => None,
+            }
+        } else {
+            Some(self.model_slots.get(slot).trim()).filter(|m| !m.is_empty())
+        }
+    }
 }
 
 /// 与后端 `SubscriptionPatch::model_slots` 整块替换: `fallback` 空串 = 未配置, 与其它槽位一样
@@ -585,10 +659,13 @@ impl RequestQuery {
     }
 }
 
-/// 后端 `provider::model::LocalizedText`: 三语各一份, 后端保证齐全。
+/// 后端 `provider::model::LocalizedText`: 四语各一份, 后端保证齐全。`zh-Hant` 可缺:
+/// 6.4 及以前的桌面端不发它, 繁中退回简中原文。
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct LocalizedName {
     pub zh: String,
+    #[serde(rename = "zh-Hant", default)]
+    pub zh_hant: Option<String>,
     pub en: String,
     pub ja: String,
 }
@@ -597,6 +674,7 @@ impl LocalizedName {
     pub fn get(&self, lang: Lang) -> &str {
         match lang {
             Lang::Zh => &self.zh,
+            Lang::ZhHant => self.zh_hant.as_deref().unwrap_or(&self.zh),
             Lang::En => &self.en,
             Lang::Ja => &self.ja,
         }
@@ -672,6 +750,9 @@ impl ProviderEndpoint {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct ProviderTranslations {
+    /// 6.4 及以前的桌面端不发, 此时 [`Provider::localized`] 保留简中原文。
+    #[serde(rename = "zh-Hant", default)]
+    pub zh_hant: Option<ProviderText>,
     pub en: ProviderText,
     pub ja: ProviderText,
 }
@@ -729,6 +810,10 @@ impl Provider {
     pub fn localized(mut self, lang: Lang) -> Self {
         let text = match lang {
             Lang::Zh => return self,
+            Lang::ZhHant => match self.translations.zh_hant.clone() {
+                Some(text) => text,
+                None => return self,
+            },
             Lang::En => self.translations.en.clone(),
             Lang::Ja => self.translations.ja.clone(),
         };
@@ -1053,6 +1138,27 @@ mod tests {
         assert_eq!(CustomProtocol::ALL.iter().filter(|p| p.is_systemone()).count(), 1);
     }
 
+    /// 6.4 及以前的桌面端不发 `zh-Hant` (AppImage 复制到 ~/.local/bin 的新 TUI 连旧 app、或桌面端降级):
+    /// 缺字段不能让整页解析失败, 繁中退回简中原文。
+    #[test]
+    fn zh_hant_falls_back_to_zh_when_an_older_desktop_app_omits_it() {
+        let name: LocalizedName = serde_json::from_str(r#"{"zh":"智谱","en":"Zhipu","ja":"Zhipu"}"#).unwrap();
+        assert_eq!(name.get(Lang::ZhHant), "智谱");
+        let provider: Provider = serde_json::from_value(serde_json::json!({
+            "id": "zhipu",
+            "display_name": "智谱",
+            "description": null,
+            "endpoints": [{"id": "cn", "label": "国内版", "base_url": "https://x"}],
+            "auth": {"type": "api_key"},
+            "model_discovery": {"enabled": false},
+            "translations": {"en": {"display_name": "Zhipu"}, "ja": {"display_name": "Zhipu"}},
+        }))
+        .unwrap();
+        let local = provider.localized(Lang::ZhHant);
+        assert_eq!(local.display_name, "智谱");
+        assert_eq!(local.endpoints[0].label, "国内版");
+    }
+
     #[test]
     fn capabilities_follow_endpoint_protocols() {
         let ep = |id: &str, protocol: &str| ProviderEndpoint {
@@ -1072,7 +1178,7 @@ mod tests {
             default_endpoint: None,
             auth: ProviderAuth { auth_type: "api_key".into() },
             model_discovery: ModelDiscovery { enabled: true, example_models: vec![] },
-            translations: ProviderTranslations { en: text.clone(), ja: text },
+            translations: ProviderTranslations { zh_hant: Some(text.clone()), en: text.clone(), ja: text },
             url_params: vec![],
         };
         assert_eq!(p.capabilities(), (true, true));
@@ -1097,6 +1203,37 @@ mod tests {
         .unwrap();
         assert_eq!(subs[0].state, SubscriptionState::Unknown);
         assert!(subs[0].quota_usage.is_empty());
+    }
+
+    #[test]
+    fn slot_now_reads_the_backend_value_only_for_scheduled_slots() {
+        let sub: Subscription = serde_json::from_str(
+            r#"{"id":"a","display_name":"n","provider_display_name":"p","enabled":true,"state":"healthy",
+                "is_dispatchable":true,"provider_id":"p","base_url":"","auth_type":"api_key",
+                "model_slots":{"fable":"f","opus":"o","sonnet":"","haiku":"h"},
+                "slot_schedules":{"opus":[{"days":[1],"start":"18:00","end":"08:00","model":"n"}],
+                                  "sonnet":[{"days":[1],"start":"18:00","end":"08:00","model":"n"}]},
+                "slot_models_now":{"fable":"f","opus":"n","sonnet":null,"haiku":"h"}}"#,
+        )
+        .unwrap();
+        assert!(sub.slot_is_scheduled(Slot::Opus) && sub.slot_is_scheduled(Slot::Sonnet));
+        assert!(!sub.slot_is_scheduled(Slot::Fable) && !sub.slot_is_scheduled(Slot::Fallback));
+        assert_eq!(sub.slot_now(Slot::Opus), Some("n"));
+        assert_eq!(sub.slot_now(Slot::Sonnet), None, "scheduled slot with nothing in effect");
+        assert_eq!(sub.slot_now(Slot::Haiku), Some("h"));
+        assert_eq!(sub.slot_now(Slot::Fallback), None);
+    }
+
+    #[test]
+    fn slot_now_falls_back_to_configured_models_on_an_old_backend() {
+        let sub: Subscription = serde_json::from_str(
+            r#"{"id":"a","display_name":"n","provider_display_name":"p","enabled":true,"state":"healthy",
+                "is_dispatchable":true,"provider_id":"p","base_url":"","auth_type":"api_key",
+                "model_slots":{"fable":"f","opus":"o","sonnet":"","haiku":"h"}}"#,
+        )
+        .unwrap();
+        assert_eq!(sub.slot_now(Slot::Opus), Some("o"));
+        assert_eq!(sub.slot_now(Slot::Sonnet), None);
     }
 
     fn quota(period: QuotaPeriod, limit: Option<u64>, used: u64) -> QuotaUsage {

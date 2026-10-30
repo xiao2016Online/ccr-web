@@ -97,6 +97,10 @@ export function useSettingsForm() {
   async function changeUpdateSource(next: UpdateSource) {
     await patch({ update_source: next });
   }
+  // 与更新源一样不留本地副本: 更新页也有同一个开关, 两边都读 settings 缓存
+  async function changeAutoCheckUpdates(next: boolean) {
+    await patch({ auto_check_updates: next });
+  }
   // 调试模式即时生效:pipeline 每次出站读 settings.debug_mode 决定是否落盘.
   async function changeDebugMode(next: boolean) {
     setDebugMode(next);
@@ -219,6 +223,7 @@ export function useSettingsForm() {
     tuiEnabled,
     changeLanguage,
     changeUpdateSource,
+    changeAutoCheckUpdates,
     changeDebugMode,
     changeListenAll,
     changeMaxBodyMb,

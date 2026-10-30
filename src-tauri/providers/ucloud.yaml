@@ -6,12 +6,14 @@
 id: ucloud
 display_name:
   zh: "优云智算 UCloud"
+  zh-Hant: "優雲智算 UCloud"
   en: "UCloud Compshare"
   ja: "UCloud Compshare"
 icon: ""
 category: aggregator
 description:
   zh: "优云智算 Modelverse · Anthropic 兼容端点 (Coding Plan 订阅 + 按量付费 API)"
+  zh-Hant: "優雲智算 Modelverse · Anthropic 相容端點 (Coding Plan 訂閱 + 按量計費 API)"
   en: "UCloud Compshare Modelverse · Anthropic-compatible endpoint (Coding Plan subscription + pay-as-you-go API)"
   ja: "UCloud Compshare Modelverse · Anthropic 互換エンドポイント（Coding Plan サブスクリプション + 従量課金 API）"
 homepage: "https://www.compshare.cn"
@@ -24,10 +26,12 @@ endpoints:
   - id: coding_plan
     label:
       zh: "国内版 · Coding Plan 订阅"
+      zh-Hant: "中國版 · Coding Plan 訂閱"
       en: "China · Coding Plan subscription"
       ja: "中国版 · Coding Plan サブスクリプション"
     description:
       zh: "优云智算 Coding Plan 订阅, 适配 Claude Code"
+      zh-Hant: "優雲智算 Coding Plan 訂閱, 適配 Claude Code"
       en: "UCloud Compshare Coding Plan subscription, built for Claude Code"
       ja: "UCloud Compshare Coding Plan サブスクリプション。Claude Code 対応"
     base_url: "https://cp.compshare.cn"
@@ -38,10 +42,12 @@ endpoints:
   - id: paygo_cn
     label:
       zh: "国内版 · 按量付费 API"
+      zh-Hant: "中國版 · 按量計費 API"
       en: "China · Pay-as-you-go API"
       ja: "中国版 · 従量課金 API"
     description:
       zh: "Modelverse 国内 Anthropic 兼容端点, 按 token 计费"
+      zh-Hant: "Modelverse 中國 Anthropic 相容端點, 按 token 計費"
       en: "Modelverse China Anthropic-compatible endpoint, billed per token"
       ja: "Modelverse 中国版の Anthropic 互換エンドポイント。トークン従量課金"
     base_url: "https://api.modelverse.cn"
@@ -52,10 +58,12 @@ endpoints:
   - id: paygo_global
     label:
       zh: "国际版 · 按量付费 API"
+      zh-Hant: "國際版 · 按量計費 API"
       en: "International · Pay-as-you-go API"
       ja: "国際版 · 従量課金 API"
     description:
       zh: "Modelverse 海外 Anthropic 兼容端点, 按 token 计费"
+      zh-Hant: "Modelverse 海外 Anthropic 相容端點, 按 token 計費"
       en: "Modelverse international Anthropic-compatible endpoint, billed per token"
       ja: "Modelverse 国際版の Anthropic 互換エンドポイント。トークン従量課金"
     base_url: "https://api.umodelverse.ai"
