@@ -15,6 +15,7 @@ import "./styles.css";
 // plain.css 是「素净」画风的结构规则 (圆角/描边/布局), techblue.css 只含配色 token。
 import "./themes/plain.css";
 import "./themes/techblue.css";
+import "./themes/techorange.css";
 
 // crypto.randomUUID 只在安全上下文 (HTTPS / localhost) 提供; 服务器版常以
 // http://IP:端口 裸访问, 这里补一个 RFC 4122 v4 兜底实现 (Kiro OAuth 的

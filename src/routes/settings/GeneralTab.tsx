@@ -9,6 +9,7 @@ import {
 import { useT, type LanguagePref } from "@/i18n";
 import { runtime } from "@/runtime";
 import { useTheme, type ColorMode } from "@/hooks/useTheme";
+import { THEMES } from "@/themes";
 import type { UpdateSource } from "@/types";
 import type { SettingsForm } from "./useSettingsForm";
 import { useWizard } from "@/components/onboarding/wizardStore";
@@ -19,7 +20,7 @@ const COLOR_MODES: readonly ColorMode[] = ["system", "light", "dark"];
 /** 通用: 语言 / 开机自启 / 更新源 / 自动检查更新, 外观 (界面主题 / 明暗模式). */
 export function GeneralTab({ form }: { form: SettingsForm }) {
   const { t } = useT();
-  const { mode, setMode } = useTheme();
+  const { mode, setMode, themeId, setThemeId } = useTheme();
   const wizard = useWizard();
   const onboarding = useOnboardingState();
 
@@ -112,13 +113,38 @@ export function GeneralTab({ form }: { form: SettingsForm }) {
         </div>
       </div>
 
-      {/* 外观: 与侧栏底部的明暗按钮是同一份状态, 只存本机 (localStorage)。
-          界面主题已固定为科技蓝一套, 这里只保留明暗模式。 */}
+      {/* 外观: 主题与明暗都只存本机 (localStorage), 与侧栏底部的明暗按钮共用同一份状态 */}
       <div className="card section">
         <div className="card-head">
           <div className="card-title">{t("settings.section.appearance")}</div>
         </div>
         <div className="card-body">
+          <div className="setting-row">
+            <div className="label-col">
+              {t("settings.appearance.theme.label")}
+              <div className="desc">{t("settings.appearance.theme.desc")}</div>
+            </div>
+            <div
+              className="radio-group"
+              role="radiogroup"
+              aria-label={t("settings.appearance.theme.label")}
+              style={{ display: "flex", maxWidth: 320 }}
+            >
+              {THEMES.map((th) => (
+                <button
+                  key={th.id}
+                  type="button"
+                  className={themeId === th.id ? "on" : ""}
+                  onClick={() => setThemeId(th.id)}
+                  role="radio"
+                  aria-checked={themeId === th.id}
+                  style={{ flex: 1 }}
+                >
+                  {t(th.labelKey)}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="setting-row">
             <div className="label-col">{t("settings.appearance.mode.label")}</div>
             <div

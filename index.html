@@ -10,7 +10,7 @@
     <script>
       // 首帧前同步明暗与界面主题, 避免启动时先闪一下别的配色。
       // 键名与 src/hooks/useTheme.tsx 的 MODE_KEY、src/themes/index.ts 保持一致。
-      // 服务器版只有科技蓝一套主题 (plain 画风): 只恢复明暗, 主题恒为 techblue。
+      // 服务器版有两套主题 (科技蓝 / 暖橙, 同 plain 画风): 恢复明暗与主题, 避免首帧闪烁。
       (function () {
         var root = document.documentElement;
         try {
@@ -21,7 +21,13 @@
               window.matchMedia("(prefers-color-scheme: dark)").matches);
           if (dark) root.classList.add("dark");
         } catch (e) {}
-        root.setAttribute("data-theme", "techblue");
+        // 恢复上次选择的主题 (只有 techblue / techorange 两种)
+        var theme = "techblue";
+        try {
+          var savedTheme = localStorage.getItem("cc-router-ui-theme");
+          if (savedTheme === "techorange") theme = savedTheme;
+        } catch (e) {}
+        root.setAttribute("data-theme", theme);
         root.setAttribute("data-art", "plain");
       })();
     </script>

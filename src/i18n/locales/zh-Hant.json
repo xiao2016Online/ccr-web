@@ -168,7 +168,7 @@
   "settings.language.system": "跟隨系統",
   "settings.section.appearance": "外觀",
   "settings.appearance.theme.label": "介面主題",
-  "settings.appearance.theme.desc": "手繪是與官網一致的速寫本風格（預設）；經典是改版前的簡潔樣式；Win2000 是復古的 Windows 2000 風格",
+  "settings.appearance.theme.desc": "切換後立即生效，只影響本機瀏覽器。",
   "settings.appearance.mode.label": "明暗模式",
   "theme.name.classic": "經典",
   "theme.name.sketch": "手繪",
@@ -1415,5 +1415,6 @@
   "stats.cacheHit.legend.read": "命中讀取",
   "stats.cacheHit.legend.write": "快取寫入",
   "stats.cacheHit.legend.miss": "未命中",
-  "stats.cacheHit.rowTip": "命中讀取 {read} · 快取寫入 {write} · 未命中 {miss} tokens"
+  "stats.cacheHit.rowTip": "命中讀取 {read} · 快取寫入 {write} · 未命中 {miss} tokens",
+  "theme.name.techorange": "暖橙"
 }

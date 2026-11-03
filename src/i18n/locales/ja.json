@@ -168,7 +168,7 @@
   "settings.language.system": "システムに従う",
   "settings.section.appearance": "外観",
   "settings.appearance.theme.label": "テーマ",
-  "settings.appearance.theme.desc": "サーバー版はテックブルー配色に固定されています",
+  "settings.appearance.theme.desc": "切り替えは即時反映され、このブラウザにのみ適用されます。",
   "settings.appearance.mode.label": "カラーモード",
   "theme.name.classic": "クラシック",
   "theme.name.sketch": "手描き",
@@ -1415,5 +1415,6 @@
   "stats.cacheHit.legend.read": "キャッシュ読取",
   "stats.cacheHit.legend.write": "キャッシュ書込",
   "stats.cacheHit.legend.miss": "ミス",
-  "stats.cacheHit.rowTip": "読取 {read} · 書込 {write} · ミス {miss} トークン"
+  "stats.cacheHit.rowTip": "読取 {read} · 書込 {write} · ミス {miss} トークン",
+  "theme.name.techorange": "ウォームオレンジ"
 }

@@ -168,7 +168,7 @@
   "settings.language.system": "Follow system",
   "settings.section.appearance": "Appearance",
   "settings.appearance.theme.label": "Theme",
-  "settings.appearance.theme.desc": "The server edition ships with the Tech Blue palette",
+  "settings.appearance.theme.desc": "Takes effect immediately and applies to this browser only.",
   "settings.appearance.mode.label": "Color mode",
   "theme.name.classic": "Classic",
   "theme.name.sketch": "Sketch",
@@ -1415,5 +1415,6 @@
   "stats.cacheHit.legend.read": "Cache read",
   "stats.cacheHit.legend.write": "Cache write",
   "stats.cacheHit.legend.miss": "Miss",
-  "stats.cacheHit.rowTip": "read {read} · write {write} · miss {miss} tokens"
+  "stats.cacheHit.rowTip": "read {read} · write {write} · miss {miss} tokens",
+  "theme.name.techorange": "Warm Orange"
 }

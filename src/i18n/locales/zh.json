@@ -168,7 +168,7 @@
   "settings.language.system": "跟随系统",
   "settings.section.appearance": "外观",
   "settings.appearance.theme.label": "界面主题",
-  "settings.appearance.theme.desc": "服务器版固定使用科技蓝配色",
+  "settings.appearance.theme.desc": "切换后立即生效，只影响本机浏览器。",
   "settings.appearance.mode.label": "明暗模式",
   "theme.name.classic": "经典",
   "theme.name.sketch": "手绘",
@@ -1415,5 +1415,6 @@
   "stats.cacheHit.legend.read": "命中读取",
   "stats.cacheHit.legend.write": "缓存写入",
   "stats.cacheHit.legend.miss": "未命中",
-  "stats.cacheHit.rowTip": "命中读取 {read} · 缓存写入 {write} · 未命中 {miss} tokens"
+  "stats.cacheHit.rowTip": "命中读取 {read} · 缓存写入 {write} · 未命中 {miss} tokens",
+  "theme.name.techorange": "暖橙"
 }

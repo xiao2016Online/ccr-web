@@ -1,0 +1,355 @@
+/* ============================================================
+ * 主题「暖橙」配色 —— 与科技蓝并列的第二套配色, 结构完全一致, 只换色值。
+ *
+ * 浅色: 暖灰纸面 + 暖橙 (orange-600) 强调色; 暗色: 暖褐深底 + 亮橙。
+ * 只放配色 token; 外形 (圆角 / 描边 / 投影 / 字体) 归 plain 画风管 (plain.css)。
+ *
+ * 与 techblue.css 逐 token 对照, 便于两套主题同步维护; 错误色 (--err) 两套一致。
+ * :where() 让权重与 :root / .dark 持平, 暗色块写在亮色块之后即可在暗色下胜出。
+ * ============================================================ */
+
+:root:where([data-theme="techorange"]) {
+  --bg:        #faf9f7;
+  --surface:   #ffffff;
+  --surface-2: #fffbf7;
+  --surface-3: #f5f2ee;
+  --line:      #ece7e1;
+  --line-2:    #d8d1c8;
+  --ink:       #1c1917;
+  --ink-2:     #44403c;
+  --ink-3:     #78716c;
+  --ink-4:     #a8a29e;
+  --ink-5:     #cfc9c2;
+
+  --accent:      #ea580c;
+  --accent-ink:  #c2410c;
+  --accent-bg:   #fff4ea;
+  --accent-line: #fed7aa;
+
+  --ok:    #059669;
+  --ok-bg: #ecfdf5;
+  --warn:  #d97706;
+  /* 失败/错误改用紫罗兰系: 与主题蓝同为冷色, 不再出现红蓝撞色。
+     --err 用于文字/边框/状态点, 取 violet-600 保证小字号可读;
+     --chart-error 用于图表色块, 可以更浅 (图表不依赖文字对比度)。 */
+  --err:         #7c3aed;
+  --err-bg:      #f5f3ff;
+  --chart-error: #a78bfa;
+
+  /* 路由图 / 虚拟模型映射: 客户端=青绿, 路由器=蓝, 上游=靛蓝, 错误=红 */
+  --rf-client-line: #a7f3d0;
+  --rf-client-flow: #10b981;
+  --rf-client-ink:  #047857;
+  --rf-client-bg:   #ecfdf5;
+  --rf-router-bg:   #fff4ea;
+  --rf-up-line:     #fed7aa;
+  --rf-up-flow:     #ea580c;
+  --rf-up-ink:      #c2410c;
+  --rf-up-bg:       #fff7ed;
+  --rf-err-line:    #fecaca;
+  --rf-err-ink:     #b91c1c;
+
+  /* 顺序色阶 (浅→深): Token 四段堆叠柱 / 年历热力图 4 档。
+     styles.css 里是手绘主题的「铁锈橙」, 服务器版统一换成科技蓝系。 */
+  --seq-1: #fed7aa;
+  --seq-2: #fdba74;
+  --seq-3: #fb923c;
+  --seq-4: #ea580c;
+
+  /* shadcn HSL token */
+  --background: 35 30% 98%;
+  --foreground: 24 10% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 25 95% 53%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 30 12% 94%;
+  --secondary-foreground: 24 10% 10%;
+  --muted: 30 12% 94%;
+  --muted-foreground: 25 6% 45%;
+  --accent-foreground: 24 10% 10%;
+  --destructive: 262 83% 58%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 30 10% 89%;
+  --input: 30 10% 85%;
+  --ring: 25 95% 53%;
+}
+
+.dark:where([data-theme="techorange"]) {
+  --bg:        #14110f;
+  --surface:   #1e1a17;
+  --surface-2: #1a1614;
+  --surface-3: #2a231d;
+  --line:      #332c26;
+  --line-2:    #4a4038;
+  --ink:       #f5f2ee;
+  --ink-2:     #ddd6ce;
+  --ink-3:     #a8a09a;
+  --ink-4:     #7a716a;
+  --ink-5:     #5a524b;
+
+  --accent:      #f97316;
+  --accent-ink:  #fdba74;
+  --accent-bg:   #2a1f16;
+  --accent-line: #5a3d22;
+
+  --ok:    #34d399;
+  --ok-bg: #0c2b22;
+  --warn:  #fbbf24;
+  /* 暗色下错误色取浅紫 (深底上更亮), 图表同色 */
+  --err:         #c4b5fd;
+  --err-bg:      #2b1f4d;
+  --chart-error: #c4b5fd;
+
+  --rf-client-line: #14523f;
+  --rf-client-flow: #34d399;
+  --rf-client-ink:  #6ee7b7;
+  --rf-client-bg:   #0c2b22;
+  --rf-router-bg:   #2a1f16;
+  --rf-up-line:     #7c2d12;
+  --rf-up-flow:     #fb923c;
+  --rf-up-ink:      #fdba74;
+  --rf-up-bg:       #2a1f16;
+  --rf-err-line:    #7f1d1d;
+  --rf-err-ink:     #fca5a5;
+
+  /* 暗色下反向 (深→浅), 保持堆叠段之间的明度差 */
+  --seq-1: #7c2d12;
+  --seq-2: #9a3412;
+  --seq-3: #c2410c;
+  --seq-4: #fb923c;
+
+  --background: 24 12% 8%;
+  --foreground: 30 12% 93%;
+  --card: 24 10% 11%;
+  --card-foreground: 30 12% 93%;
+  --popover: 24 10% 12%;
+  --popover-foreground: 30 12% 93%;
+  --primary: 27 96% 61%;
+  --primary-foreground: 24 12% 8%;
+  --secondary: 24 8% 17%;
+  --secondary-foreground: 30 12% 93%;
+  --muted: 24 8% 17%;
+  --muted-foreground: 30 7% 62%;
+  --accent-foreground: 30 12% 93%;
+  --destructive: 262 80% 65%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 24 8% 20%;
+  --input: 24 8% 25%;
+  --ring: 27 96% 61%;
+}
+
+/* ------------------------------------------------------------
+ * 强调色落点: 侧栏激活导航项用科技蓝 (plain 画风默认是墨色底)。
+ * 技术说明: 与 plain.css 的 :where([data-art~="plain"]) 选择器同权重,
+ * 本文件在 main.tsx 中后置导入, 依源码顺序胜出。
+ * ------------------------------------------------------------ */
+:where([data-theme="techorange"]) .nav-item.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+:where([data-theme="techorange"]) .nav-item.active .nav-icon { color: #ffffff; }
+:where([data-theme="techorange"]) .nav-item.active .badge {
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.dark:where([data-theme="techorange"]) .nav-item.active {
+  background: var(--accent-bg);
+  color: var(--accent-ink);
+}
+.dark:where([data-theme="techorange"]) .nav-item.active .nav-icon { color: var(--accent-ink); }
+.dark:where([data-theme="techorange"]) .nav-item.active .badge {
+  background: rgba(253, 186, 116, 0.16);
+  color: var(--accent-ink);
+}
+
+/* ------------------------------------------------------------
+ * 主按钮与开关的开启态: plain 画风默认是墨黑底 (--ink),
+ * 科技蓝主题统一改成强调蓝, 与导航激活项、图表成功柱同色系。
+ * ------------------------------------------------------------ */
+:where([data-theme="techorange"]) .btn.primary {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+:where([data-theme="techorange"]) .btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+  border-color: color-mix(in srgb, var(--accent) 88%, #000);
+  box-shadow: none;
+}
+.dark:where([data-theme="techorange"]) .btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 86%, #fff);
+  border-color: color-mix(in srgb, var(--accent) 86%, #fff);
+}
+
+/* 开关: 开启态用主题蓝, 关闭态保持中性灰 */
+:where([data-theme="techorange"]) .toggle.on {
+  background: var(--accent);
+}
+
+/* 只读提示条里的「去设置」按钮同样用主题蓝 */
+:where([data-theme="techorange"]) .btn-dark {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+:where([data-theme="techorange"]) .btn-dark:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+  border-color: color-mix(in srgb, var(--accent) 88%, #000);
+  box-shadow: none;
+  transform: none;
+}
+.dark:where([data-theme="techorange"]) .btn-dark:hover {
+  background: color-mix(in srgb, var(--accent) 86%, #fff);
+  border-color: color-mix(in srgb, var(--accent) 86%, #fff);
+}
+
+/* ------------------------------------------------------------
+ * 剩余黑色元素: 步骤指示器 / 设置页激活标签下划线 / Live Routing 的深色按钮。
+ * 统一换成主题蓝, 页面上不再出现黑底交互元素。
+ * ------------------------------------------------------------ */
+:where([data-theme="techorange"]) .step.done .num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+:where([data-theme="techorange"]) .step.active .num {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+:where([data-theme="techorange"]) .step.done + .step-bar { background: var(--accent); }
+
+:where([data-theme="techorange"]) .tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+:where([data-theme="techorange"]) .lrc-btn-dark {
+  background: var(--accent);
+  color: #ffffff;
+}
+:where([data-theme="techorange"]) .lrc-btn-dark:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+.dark:where([data-theme="techorange"]) .lrc-btn-dark:hover {
+  background: color-mix(in srgb, var(--accent) 86%, #fff);
+}
+
+/* 原生复选框 / 单选框的选中色: 小票页设置里原本是 accent-color: var(--ink) (黑) */
+:where([data-theme="techorange"]) input[type="checkbox"],
+:where([data-theme="techorange"]) input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* ------------------------------------------------------------
+ * 手绘主题的语义色板 (--fill-*) 在服务器版里映射到同一族颜色,
+ * 避免新组件 (时段色条 / 路由图 / 引导窗口) 回落出绿、黄、橙。
+ * 规则: 描边用深蓝灰, "成功/强调"用蓝, "警告"用浅蓝灰, "错误"用紫,
+ *       分类色按蓝 -> 紫的色阶区分, 中性用灰。
+ * ------------------------------------------------------------ */
+:root:where([data-theme="techorange"]) {
+  /* 手绘主题用 --stroke 做"墨线"描边; 科技蓝下统一成浅灰蓝, 避免出现黑框 */
+  --stroke: #d8d1c8;
+
+  /* 浅色填充 (卡片/色条底色) */
+  --fill-sky:       #ffedd5;
+  --fill-oat:       #f5f2ee;
+  --fill-cactus:    #ffedd5;
+  --fill-heather:   #ede9fe;
+  --fill-coral:     #ede9fe;
+  --fill-butter:    #ffedd5;
+  --fill-clay-deep: #ea580c;
+  --fill-nose:      #c4b5fd;
+  --fill-stone:     #ece7e1;
+
+  /* 对应的深色描边/进度条 */
+  --fill-sky-bar:       #c2410c;
+  --fill-oat-bar:       #78716c;
+  --fill-cactus-bar:    #ea580c;
+  --fill-heather-bar:   #6d28d9;
+  --fill-coral-bar:     #7c3aed;
+  --fill-butter-bar:    #b45309;
+  --fill-clay-deep-bar: #9a3412;
+  --fill-nose-bar:      #8b5cf6;
+  --fill-stone-bar:     #a8a29e;
+
+  --shadow-ink: 3px 3px 0 var(--line-2);
+
+  /* 虚拟模型分类色: 蓝 -> 浅青蓝的阶梯, 决策模型用紫 */
+  --vm-fable:    #9a3412;
+  --vm-opus:     #ea580c;
+  --vm-sonnet:   #f97316;
+  --vm-haiku:    #fdba74;
+  --vm-fallback: #a8a29e;
+  --vm-jev:      #8b5cf6;
+}
+
+.dark:where([data-theme="techorange"]) {
+  --stroke: #4a4038;
+
+  --fill-sky:       #2a1f16;
+  --fill-oat:       #241f1b;
+  --fill-cactus:    #2a1f16;
+  --fill-heather:   #2a2145;
+  --fill-coral:     #2a2145;
+  --fill-butter:    #2a1f16;
+  --fill-clay-deep: #f97316;
+  --fill-nose:      #4c1d95;
+  --fill-stone:     #332c26;
+
+  --fill-sky-bar:       #fdba74;
+  --fill-oat-bar:       #a8a29e;
+  --fill-cactus-bar:    #f97316;
+  --fill-heather-bar:   #a78bfa;
+  --fill-coral-bar:     #c4b5fd;
+  --fill-butter-bar:    #fdba74;
+  --fill-clay-deep-bar: #fdba74;
+  --fill-nose-bar:      #c4b5fd;
+  --fill-stone-bar:     #78716c;
+
+  --shadow-ink: 3px 3px 0 var(--line-2);
+
+  --vm-fable:    #fdba74;
+  --vm-opus:     #f97316;
+  --vm-sonnet:   #fb923c;
+  --vm-haiku:    #fed7aa;
+  --vm-fallback: #78716c;
+  --vm-jev:      #c4b5fd;
+}
+
+/* 引导窗口第 1 步的主题预览缩略图 (styles.css 里只有 sketch/classic/win2000 三套) */
+.pv-techorange { background: #faf9f7; border-color: #ece7e1; }
+.pv-techorange .pv-bar { background: #ffffff; border-bottom: 1px solid #ece7e1; }
+.pv-techorange .pv-card { background: #ffffff; border: 1px solid #ece7e1; border-radius: 6px; box-shadow: 0 1px 3px rgba(28, 25, 23, 0.08); }
+.pv-techorange .pv-btn { background: #ea580c; border-radius: 5px; }
+.dark .pv-techorange { background: #14110f; border-color: #332c26; }
+.dark .pv-techorange .pv-bar { background: #1e1a17; border-bottom-color: #332c26; }
+.dark .pv-techorange .pv-card { background: #2a231d; border-color: #332c26; }
+.dark .pv-techorange .pv-btn { background: #f97316; }
+
+/* 虚拟模型页的「查看时刻」控件: 选中态原本是墨黑底 */
+:where([data-theme="techorange"]) .vm-time-now[aria-pressed="true"],
+:where([data-theme="techorange"]) .vm-time-days button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+:where([data-theme="techorange"]) .vm-time-now {
+  box-shadow: none;
+}
+
+/* 「查看时刻」条: 上游用 2px 墨线描边 + 硬投影, 服务器版改成常规细边框 */
+:where([data-theme="techorange"]) .vm-time {
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 虚拟模型路由图: 只需横向滚动。overflow-x:auto 会让 overflow-y 也计算成 auto,
+   内容高度差一点就冒出无意义的竖直滚动条, 这里显式关掉纵向滚动。 */
+:where([data-theme="techorange"]) .vrm-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
