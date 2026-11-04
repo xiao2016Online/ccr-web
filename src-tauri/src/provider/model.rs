@@ -383,6 +383,9 @@ pub struct BalanceDiscovery {
     #[serde(default)]
     pub method: BalanceHttpMethod,
     pub parser: BalanceParser,
+    /// 缓存保鲜期 (分钟). 随 `SubscriptionDto::balance_cache_ttl_minutes` 下发给前端,
+    /// 前端据此决定进订阅详情页时要不要静默重拉一次 (stale-while-revalidate);
+    /// 用户手动点「刷新余额」不受它限制。
     #[serde(default = "default_balance_cache_ttl")]
     pub cache_ttl_minutes: u32,
 }

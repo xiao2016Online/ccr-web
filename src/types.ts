@@ -391,6 +391,8 @@ export interface SubscriptionDto {
   balance_supported: boolean;
   /** 余额缓存 (上次拉到的值). undefined 表示从未查过或不支持. */
   balance_cache?: BalanceCacheDto;
+  /** 余额缓存保鲜期 (分钟), 来自 provider 的 `cache_ttl_minutes`; 不支持余额查询时缺省. */
+  balance_cache_ttl_minutes?: number;
   /** 创建时写进 DB 的厂商名快照 (中文); 显示走 lib/providerText.ts::providerName。 */
   provider_display_name: string;
   /** 内置厂商的三语名字 (后端按 yaml 现查); 自定义订阅与 yaml 已删的厂商没有。 */

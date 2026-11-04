@@ -19,6 +19,16 @@ interface Props {
   onChanged?: () => void;
 }
 
+/** provider yaml 没给 TTL 时的兜底, 与 Rust 侧 `default_balance_cache_ttl()` 一致。 */
+const FALLBACK_TTL_MINUTES = 10;
+/** 页面挂着不动时的探测间隔; 是否真的发请求取决于缓存有没有超过 TTL。 */
+const RECHECK_INTERVAL_MS = 30_000;
+
+/** 缓存保鲜期 (毫秒), 下限 1 分钟, 免得 TTL=0 变成"每次探测都重拉"。 */
+function ttlMsOf(sub: SubscriptionDto): number {
+  return Math.max(sub.balance_cache_ttl_minutes ?? FALLBACK_TTL_MINUTES, 1) * 60_000;
+}
+
 interface SeverityMeta {
   /** text color for the main number */
   text: string;
@@ -48,38 +58,79 @@ const SEVERITY_META: Record<BalanceSeverity, SeverityMeta> = {
 /**
  * 余额: 放在订阅编辑页「基本信息」卡片的右侧栏 (不再单独成卡)。
  * provider yaml 没声明余额查询时不渲染。
+ *
+ * 何时自动请求 (stale-while-revalidate, 一律静默 —— 期间照常显示旧值):
+ * - 从没查过 (无缓存) → 进页面查一次, 按钮转圈;
+ * - 进页面时缓存已超过 provider 的 `cache_ttl_minutes` → 静默重拉一次;
+ * - 页面一直挂着 → 每 30 秒探一次, 一旦缓存过期就静默重拉 (切回标签页立刻再探);
+ * - 缓存仍然新鲜 → 什么都不做, 直接用缓存 (避免每次打开页面都打 provider 的余额接口)。
+ * 自动请求在每个 TTL 窗口内最多失败一次 (用 lastAttemptAt 退避, 不会每 30 秒重试)。
+ * 手动点「刷新余额」永远真发请求, 不受 TTL 限制。
  */
 export function SubscriptionBalancePanel({ subscription, onChanged }: Props) {
   const { t } = useT();
   const [loading, setLoading] = useState(false);
+  /** 静默重拉: 不转按钮, 只在脚注提示, 旧余额继续显示。 */
+  const [revalidating, setRevalidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const autoFetched = useRef(false);
+  /** 自动请求的在途标记, 防止定时器与挂载请求重叠。 */
+  const autoInFlight = useRef(false);
+  /** 最近一次请求的发起时刻 (失败也记), 让自动路径按 TTL 退避而不是每 30 秒重试。 */
+  const lastAttemptAt = useRef(0);
+  /** 定时器 / 可见性回调里读最新订阅, 避开闭包里的旧 props。 */
+  const latest = useRef(subscription);
+
+  useEffect(() => {
+    latest.current = subscription;
+  });
 
   const cache = subscription.balance_cache;
 
-  // Auto-fetch once per subscription when no cache exists yet. Stale-while-revalidate
-  // is left to the user's explicit "refresh" button — avoids hammering provider quotas.
+  // 进页面 (或换订阅) 时查一次: 没缓存就查, 过期就静默重拉。
   useEffect(() => {
-    autoFetched.current = false;
+    void autoRefreshIfStale();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscription.id]);
 
+  // 页面一直挂着也到点自动更新: 定时探测 + 切回标签页立刻探测。
   useEffect(() => {
-    if (
-      subscription.balance_supported &&
-      !cache &&
-      !loading &&
-      !autoFetched.current
-    ) {
-      autoFetched.current = true;
-      void doRefresh();
-    }
+    if (!subscription.balance_supported) return;
+    const tick = () => {
+      // 后台标签页不探测, 浏览器恢复可见时由 visibilitychange 补一次。
+      if (document.visibilityState !== "visible") return;
+      void autoRefreshIfStale();
+    };
+    const timer = window.setInterval(tick, RECHECK_INTERVAL_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subscription.id, subscription.balance_supported, !!cache]);
+  }, [subscription.id, subscription.balance_supported]);
 
   if (!subscription.balance_supported) return null;
 
-  async function doRefresh() {
-    setLoading(true);
+  /** 缓存过期 (或根本没有) 就静默拉一次; 同一 TTL 窗口内不重复尝试。 */
+  async function autoRefreshIfStale() {
+    const sub = latest.current;
+    if (!sub.balance_supported || autoInFlight.current) return;
+    const cached = sub.balance_cache;
+    // 上一次尝试也算"刚看过": 失败后等一个 TTL 再来, 不每 30 秒打一次接口。
+    const since = Math.max(cached?.fetched_at ?? 0, lastAttemptAt.current);
+    if (Date.now() - since < ttlMsOf(sub)) return;
+    autoInFlight.current = true;
+    try {
+      await doRefresh({ silent: !!cached });
+    } finally {
+      autoInFlight.current = false;
+    }
+  }
+
+  async function doRefresh({ silent = false }: { silent?: boolean } = {}) {
+    lastAttemptAt.current = Date.now();
+    if (silent) setRevalidating(true);
+    else setLoading(true);
     setError(null);
     try {
       const result = await api.refreshSubscriptionBalance(subscription.id);
@@ -91,7 +142,8 @@ export function SubscriptionBalancePanel({ subscription, onChanged }: Props) {
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setLoading(false);
+      if (silent) setRevalidating(false);
+      else setLoading(false);
     }
   }
 
@@ -105,7 +157,12 @@ export function SubscriptionBalancePanel({ subscription, onChanged }: Props) {
           <Wallet className="h-4 w-4" />
           {t("subscriptionBalance.title")}
         </h3>
-        <Button variant="outline" size="sm" onClick={doRefresh} disabled={loading}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void doRefresh()}
+          disabled={loading}
+        >
           {loading ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
           {loading
             ? t("subscriptionBalance.refreshing")
@@ -141,10 +198,20 @@ export function SubscriptionBalancePanel({ subscription, onChanged }: Props) {
           </div>
         )}
 
-        {cache && (
-          <div className="text-[11px] text-muted-foreground">
-            {t("subscriptionBalance.lastUpdatedPrefix")}
-            {fmtRelativeTime(cache.fetched_at, t)}
+        {(cache || revalidating) && (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            {revalidating && (
+              <>
+                <Spinner size={10} />
+                <span>{t("subscriptionBalance.refreshing")}</span>
+              </>
+            )}
+            {cache && (
+              <span>
+                {t("subscriptionBalance.lastUpdatedPrefix")}
+                {fmtRelativeTime(cache.fetched_at, t)}
+              </span>
+            )}
           </div>
         )}
       </div>

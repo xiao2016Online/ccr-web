@@ -586,6 +586,10 @@ pub struct SubscriptionDto {
     /// Last cached balance payload. `None` when never fetched or unsupported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub balance_cache: Option<BalanceCacheDto>,
+    /// 余额缓存的保鲜期 (分钟), 取自 provider yaml `balance_discovery.cache_ttl_minutes`。
+    /// 前端进详情页时据此判断缓存是否过期、要不要静默重拉; 不支持余额查询时为 `None`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub balance_cache_ttl_minutes: Option<u32>,
     /// 创建订阅时写进 DB 的厂商名快照 (中文)。自定义订阅是用户自己填的名字。
     pub provider_display_name: String,
     /// 内置厂商的三语名字, 按 `provider_id` 从当前 yaml 现查; 显示时优先用它, 快照只给自定义订阅
@@ -755,6 +759,13 @@ impl SubscriptionDto {
                 fetched_at: s.fetched_at.timestamp_millis(),
                 snapshot: s.clone(),
             }),
+            // 与 balance_supported 同源: 不支持余额查询的订阅不带 TTL, 前端也不会自动去拉。
+            balance_cache_ttl_minutes: rt
+                .row
+                .balance_discovery
+                .as_ref()
+                .filter(|b| b.enabled)
+                .map(|b| b.cache_ttl_minutes),
             provider_display_name: rt.row.provider_display_name.clone(),
             provider_names: providers
                 .get(&rt.row.provider_id)
@@ -1015,5 +1026,41 @@ mod tests {
         let rt = SubscriptionRuntime::from_row(SubscriptionRow::test_fixture("p", "e"));
         let v = serde_json::to_value(SubscriptionDto::from_runtime(&rt, vec![], &HashMap::new())).unwrap();
         assert_eq!(v["slot_schedules"], serde_json::json!({}));
+    }
+
+    fn balance_discovery(enabled: bool, ttl_minutes: u32) -> crate::provider::model::BalanceDiscovery {
+        use crate::provider::model::{BalanceHttpMethod, BalanceParser};
+        crate::provider::model::BalanceDiscovery {
+            enabled,
+            url: "https://api.deepseek.com/user/balance".into(),
+            method: BalanceHttpMethod::Get,
+            parser: BalanceParser::Deepseek,
+            cache_ttl_minutes: ttl_minutes,
+        }
+    }
+
+    /// 余额缓存的保鲜期必须跟着 DTO 下发给前端 —— 前端据此决定进详情页时要不要静默重拉。
+    /// 这个字段以前只存在 yaml 里、没人读, 所以 10 分钟 TTL 从来没生效过。
+    #[test]
+    fn dto_carries_balance_cache_ttl() {
+        let mut row = SubscriptionRow::test_fixture("deepseek", "default");
+        row.balance_discovery = Some(balance_discovery(true, 10));
+        let rt = SubscriptionRuntime::from_row(row);
+        let dto = SubscriptionDto::from_runtime(&rt, vec![], &HashMap::new());
+        assert!(dto.balance_supported);
+        assert_eq!(dto.balance_cache_ttl_minutes, Some(10));
+
+        // enabled: false 等价于「不支持」: 没有 TTL, 前端也就不会自动去拉。
+        let mut row = SubscriptionRow::test_fixture("deepseek", "default");
+        row.balance_discovery = Some(balance_discovery(false, 10));
+        let rt = SubscriptionRuntime::from_row(row);
+        let dto = SubscriptionDto::from_runtime(&rt, vec![], &HashMap::new());
+        assert!(!dto.balance_supported);
+        assert_eq!(dto.balance_cache_ttl_minutes, None);
+
+        // provider 没声明 balance_discovery: 字段整个不出现, 老前端不受影响。
+        let rt = SubscriptionRuntime::from_row(SubscriptionRow::test_fixture("zhipu", "default"));
+        let v = serde_json::to_value(SubscriptionDto::from_runtime(&rt, vec![], &HashMap::new())).unwrap();
+        assert!(v.get("balance_cache_ttl_minutes").is_none());
     }
 }
