@@ -23,15 +23,23 @@ RUN pnpm build
 
 # ---------- 阶段 2: Rust 编译 ----------
 FROM rust:1-slim AS build
-# 国内网络: 换 Debian 源 (USTC) 与 crates.io 源 (rsproxy)
-RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+# 软件源可配: 国内网络默认走 USTC apt + rsproxy cargo (本地构建更快);
+# CI 跑在 GitHub 美国 runner 上, 通过 build-arg 传空值改用官方源
+# (否则 mirrors.ustc.edu.cn 连不上, apt-get 直接失败)。
+ARG APT_MIRROR=mirrors.ustc.edu.cn
+ARG CARGO_MIRROR=rsproxy
+RUN if [ -n "$APT_MIRROR" ]; then \
+      sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential cmake ninja-build perl pkg-config ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /usr/local/cargo \
-    && printf '[source.crates-io]\nreplace-with = "rsproxy"\n\n[source.rsproxy]\nregistry = "sparse+https://rsproxy.cn/index/"\n' \
-       > /usr/local/cargo/config.toml
+    && rm -rf /var/lib/apt/lists/*
+RUN if [ "$CARGO_MIRROR" = "rsproxy" ]; then \
+      mkdir -p /usr/local/cargo \
+      && printf '[source.crates-io]\nreplace-with = "rsproxy"\n\n[source.rsproxy]\nregistry = "sparse+https://rsproxy.cn/index/"\n' \
+         > /usr/local/cargo/config.toml; \
+    fi
 WORKDIR /app
 
 # 依赖层缓存: 先用占位源码按同一份 Cargo.toml/lock 把全部第三方依赖编译好,
@@ -54,9 +62,12 @@ RUN cargo build --release --no-default-features --features server --bin ccr-serv
 
 # ---------- 阶段 3: 运行层 ----------
 FROM debian:trixie-slim
-# 国内网络: 换 Debian 源后再装运行时依赖。
+# 软件源同上: 国内默认 USTC, CI 传 APT_MIRROR= 用官方源。
 # gosu: docker-entrypoint.sh 里 root -> ccrouter 的降权工具 (只这一段以 root 运行)。
-RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+ARG APT_MIRROR=mirrors.ustc.edu.cn
+RUN if [ -n "$APT_MIRROR" ]; then \
+      sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl gosu \
     && rm -rf /var/lib/apt/lists/* \
