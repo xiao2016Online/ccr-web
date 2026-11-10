@@ -36,8 +36,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # CI 跑在美国 runner: 用官方 Debian / crates.io 源, 关掉国内镜像
-      # (USTC apt 镜像在海外常连不上, 会让 apt-get install 直接失败)。
+      # CI 跑在美国 runner: apt / cargo / npm 全用官方源, 关掉国内镜像
+      # (USTC / rsproxy / npmmirror 在海外常连不上或超时, 会让构建直接失败)。
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -45,6 +45,7 @@ jobs:
           build-args: |
             APT_MIRROR=
             CARGO_MIRROR=
+            NPM_REGISTRY=
           push: true
           tags: |
             ${{ env.IMAGE }}:latest

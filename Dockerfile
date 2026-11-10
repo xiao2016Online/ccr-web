@@ -10,12 +10,19 @@
 
 # ---------- 阶段 1: 前端 ----------
 FROM node:22-alpine AS ui
+# npm 源可配: 国内默认 npmmirror, CI (美国 runner) 传空值用官方 registry。
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 WORKDIR /build
 # pnpm 版本钉死: 该 lockfile 的 pnpm.overrides 只有较新的 pnpm 仍从 package.json 读取,
 # 与本地验证过的版本保持一致 (corepack 自带版本会忽略该字段导致 frozen 安装失败)
-RUN npm i -g pnpm@10.33.2 --registry=https://registry.npmmirror.com
+RUN if [ -n "$NPM_REGISTRY" ]; then \
+      npm i -g pnpm@10.33.2 --registry="$NPM_REGISTRY"; \
+    else \
+      npm i -g pnpm@10.33.2; \
+    fi
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm config set registry https://registry.npmmirror.com && pnpm install --frozen-lockfile
+RUN if [ -n "$NPM_REGISTRY" ]; then pnpm config set registry "$NPM_REGISTRY"; fi \
+    && pnpm install --frozen-lockfile
 COPY index.html postcss.config.js tsconfig.json tsconfig.node.json vite.config.ts components.json ./
 COPY src ./src
 COPY public ./public
