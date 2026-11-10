@@ -417,6 +417,13 @@ async fn bootstrap_core(
         subscription::recheck_worker::run(recheck_state).await;
     });
 
+    // 9b. 余额定时刷新器:每 30min 对支持余额查询的订阅静默拉一次缓存,
+    //     让列表徽标 / 编辑页不依赖用户打开页面也能保持新鲜。
+    let balance_state = state.clone();
+    spawn_task(async move {
+        subscription::balance_worker::run(balance_state).await;
+    });
+
     let cleanup_pool = state.db.clone();
     let cleanup_settings = state.settings.clone();
     let cleanup_event_tx = state.event_log_tx.clone();

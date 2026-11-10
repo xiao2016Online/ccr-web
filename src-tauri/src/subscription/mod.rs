@@ -1,4 +1,5 @@
 pub mod balance_discovery;
+pub mod balance_worker;
 pub mod last_error;
 pub mod model;
 pub mod model_discovery;
