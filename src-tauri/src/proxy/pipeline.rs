@@ -2,9 +2,10 @@
 
 use std::time::Instant;
 
-use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 #[cfg(feature = "desktop")]
@@ -38,6 +39,7 @@ use crate::proxy::oauth_dispatch::{
     self, OAuthDispatchError,
 };
 use crate::proxy::overloaded;
+use crate::proxy::response_headers;
 use crate::proxy::retry::{classify_response, ShouldRetry};
 use crate::proxy::effort_log::{
     client_effort_of, gemini_effort_log, gemini_interactions_effort_log, kiro_effort_log,
@@ -259,7 +261,6 @@ pub async fn dispatch(
     }
 
     let mut retry_count: u32 = 0;
-    let start = Instant::now();
     // 一次 dispatch 可能产生多个 attempt(每次 retry 一行日志)。每个 attempt 用独立 id,
     // 避免 PRIMARY KEY 冲突 + 让用户在 Logs 页能看到每次 retry 的具体错误。
     let dispatch_id = Uuid::new_v4();
@@ -280,6 +281,10 @@ pub async fn dispatch(
     let mut skipped_wrong_protocol: Vec<String> = Vec::new();
     // 四槽此刻没有模型 (调度后订阅被编辑) 时跳过, 同样记入 503 summary。
     let mut skipped_no_slot_model: Vec<String> = Vec::new();
+    // 透传路径上最近一次真实 attempt 的上游 4xx: 全部候选失败时原样回给客户端
+    // (Claude Code 的能力拒绝重试要匹配上游原文), 而不是换成 503 摘要。
+    // 每次真正发请求前清空, 所以只代表「最后一次尝试」。
+    let mut last_upstream_error: Option<response_headers::UpstreamError> = None;
 
     for sub_id in order.candidate_ids {
         let attempt_id = Uuid::new_v4();
@@ -324,8 +329,10 @@ pub async fn dispatch(
             auth_header_value,
             api_key_raw,
             required_headers,
+            required_tagged,
+            source_hints,
             forward_headers,
-            forward_client_headers,
+            header_policy,
             auth_type,
             oauth_metadata,
             forced_effort,
@@ -359,8 +366,10 @@ pub async fn dispatch(
                 guard.row.auth_header_value(),
                 guard.row.api_key.clone(),
                 guard.row.resolved_required_headers(),
+                guard.row.resolved_required_headers_tagged(),
+                guard.row.source_hints(),
                 guard.row.forward_headers.clone(),
-                guard.row.forward_client_headers,
+                guard.row.header_policy.clone(),
                 guard.row.auth_type,
                 guard.row.oauth_metadata.clone(),
                 forced_effort,
@@ -398,6 +407,9 @@ pub async fn dispatch(
                 t.pin(vm_name, key, sub_id, Instant::now());
             }
         }
+        last_upstream_error = None;
+        // Per-attempt timing includes auth/HTTP header wait, not previous retries.
+        let start = Instant::now();
 
         // ChatGPT OAuth 分支: 走独立的 dispatch + 翻译层 (proxy::oauth_dispatch).
         if matches!(auth_type, AuthType::ChatgptOauth) {
@@ -423,6 +435,7 @@ pub async fn dispatch(
             };
 
             emit_attempt_started(state, sub_id, vm_name);
+            let mut upstream_capture = crate::proxy::header_log::UpstreamHeaderCapture::default();
             let dispatch_res = oauth_dispatch::dispatch_oauth_attempt(
                 &state.http_client,
                 state.chatgpt_oauth.clone(),
@@ -436,9 +449,15 @@ pub async fn dispatch(
                 client_headers.clone(),
                 required_headers.clone(),
                 codex_extras,
+                &mut upstream_capture,
+                ctx.log_headers,
             )
             .await;
+            // 本 attempt 的 ctx 带上采集到的上游两组头, 之后所有日志行都从它取。
+            let attempt_ctx = ctx.with_upstream_headers(upstream_capture, &source_hints, &client_headers);
+            let ctx = &attempt_ctx;
 
+            let total_ms = start.elapsed().as_millis() as u64;
             match dispatch_res {
                 Ok(ok) => {
                     emit_attempt_finished(state, sub_id, vm_name, true);
@@ -452,6 +471,7 @@ pub async fn dispatch(
                         real_model,
                         display_name,
                         retry_count,
+                        start,
                         state.request_log_tx.clone(),
                         state.event_log_tx.clone(),
                         state.db.clone(),
@@ -501,7 +521,8 @@ pub async fn dispatch(
                             _ => Some(401),
                         },
                         ttft_ms: None,
-                        total_latency_ms: Some(start.elapsed().as_millis() as u64),
+                        first_content_ms: None,
+                        total_latency_ms: Some(total_ms),
                         upstream_input_tokens: None,
                         upstream_output_tokens: None,
                         upstream_cache_creation: None,
@@ -520,6 +541,7 @@ pub async fn dispatch(
                         effort_source: effort_log.source,
                         upstream_effort: None,
                         tool_calls: ToolLogFields::request_only(&ctx.tools),
+                        headers: ctx.header_log(),
                     };
                     let _ = state.request_log_tx.try_send(entry);
 
@@ -544,6 +566,7 @@ pub async fn dispatch(
             let mut kiro_body = request_body.clone();
             kiro_body["model"] = Value::String(real_model.clone());
             emit_attempt_started(state, sub_id, vm_name);
+            let mut upstream_capture = crate::proxy::header_log::UpstreamHeaderCapture::default();
             let dispatch_res = oauth_dispatch::dispatch_kiro_attempt(
                 &state.http_client,
                 state.kiro_oauth.clone(),
@@ -555,9 +578,15 @@ pub async fn dispatch(
                 forward_headers.clone(),
                 client_headers.clone(),
                 required_headers.clone(),
+                &mut upstream_capture,
+                ctx.log_headers,
             )
             .await;
+            // 本 attempt 的 ctx 带上采集到的上游两组头, 之后所有日志行都从它取。
+            let attempt_ctx = ctx.with_upstream_headers(upstream_capture, &source_hints, &client_headers);
+            let ctx = &attempt_ctx;
 
+            let total_ms = start.elapsed().as_millis() as u64;
             match dispatch_res {
                 Ok(ok) => {
                     emit_attempt_finished(state, sub_id, vm_name, true);
@@ -571,6 +600,7 @@ pub async fn dispatch(
                         real_model,
                         display_name,
                         retry_count,
+                        start,
                         state.request_log_tx.clone(),
                         state.event_log_tx.clone(),
                         state.db.clone(),
@@ -620,7 +650,8 @@ pub async fn dispatch(
                             _ => Some(401),
                         },
                         ttft_ms: None,
-                        total_latency_ms: Some(start.elapsed().as_millis() as u64),
+                        first_content_ms: None,
+                        total_latency_ms: Some(total_ms),
                         upstream_input_tokens: None,
                         upstream_output_tokens: None,
                         upstream_cache_creation: None,
@@ -639,6 +670,7 @@ pub async fn dispatch(
                         effort_source: effort_log.source,
                         upstream_effort: None,
                         tool_calls: ToolLogFields::request_only(&ctx.tools),
+                        headers: ctx.header_log(),
                     };
                     let _ = state.request_log_tx.try_send(entry);
 
@@ -672,6 +704,7 @@ pub async fn dispatch(
             };
 
             emit_attempt_started(state, sub_id, vm_name);
+            let mut upstream_capture = crate::proxy::header_log::UpstreamHeaderCapture::default();
             let dispatch_res = gemini_dispatch::dispatch_gemini_attempt(
                 &state.http_client,
                 auth_header_value.clone(),
@@ -684,9 +717,16 @@ pub async fn dispatch(
                 client_headers.clone(),
                 required_headers.clone(),
                 gemini_extras,
+                &mut upstream_capture,
+                ctx.log_headers,
+                &api_key_raw,
             )
             .await;
+            // 本 attempt 的 ctx 带上采集到的上游两组头, 之后所有日志行都从它取。
+            let attempt_ctx = ctx.with_upstream_headers(upstream_capture, &source_hints, &client_headers);
+            let ctx = &attempt_ctx;
 
+            let total_ms = start.elapsed().as_millis() as u64;
             match dispatch_res {
                 Ok(ok) => {
                     emit_attempt_finished(state, sub_id, vm_name, true);
@@ -700,6 +740,7 @@ pub async fn dispatch(
                         real_model,
                         display_name,
                         retry_count,
+                        start,
                         state.request_log_tx.clone(),
                         state.event_log_tx.clone(),
                         state.db.clone(),
@@ -749,7 +790,8 @@ pub async fn dispatch(
                             _ => Some(401),
                         },
                         ttft_ms: None,
-                        total_latency_ms: Some(start.elapsed().as_millis() as u64),
+                        first_content_ms: None,
+                        total_latency_ms: Some(total_ms),
                         upstream_input_tokens: None,
                         upstream_output_tokens: None,
                         upstream_cache_creation: None,
@@ -768,6 +810,7 @@ pub async fn dispatch(
                         effort_source: effort_log.source,
                         upstream_effort: None,
                         tool_calls: ToolLogFields::request_only(&ctx.tools),
+                        headers: ctx.header_log(),
                     };
                     let _ = state.request_log_tx.try_send(entry);
 
@@ -809,6 +852,7 @@ pub async fn dispatch(
             };
 
             emit_attempt_started(state, sub_id, vm_name);
+            let mut upstream_capture = crate::proxy::header_log::UpstreamHeaderCapture::default();
             let dispatch_res = gemini_interactions_dispatch::dispatch_gemini_interactions_attempt(
                 &state.http_client,
                 auth_header_value.clone(),
@@ -823,9 +867,16 @@ pub async fn dispatch(
                 interactions_extras,
                 attempt_id,
                 dump_tx.clone(),
+                &mut upstream_capture,
+                ctx.log_headers,
+                &api_key_raw,
             )
             .await;
+            // 本 attempt 的 ctx 带上采集到的上游两组头, 之后所有日志行都从它取。
+            let attempt_ctx = ctx.with_upstream_headers(upstream_capture, &source_hints, &client_headers);
+            let ctx = &attempt_ctx;
 
+            let total_ms = start.elapsed().as_millis() as u64;
             match dispatch_res {
                 Ok(ok) => {
                     emit_attempt_finished(state, sub_id, vm_name, true);
@@ -839,6 +890,7 @@ pub async fn dispatch(
                         real_model,
                         display_name,
                         retry_count,
+                        start,
                         state.request_log_tx.clone(),
                         state.event_log_tx.clone(),
                         state.db.clone(),
@@ -889,7 +941,8 @@ pub async fn dispatch(
                             _ => Some(401),
                         },
                         ttft_ms: None,
-                        total_latency_ms: Some(start.elapsed().as_millis() as u64),
+                        first_content_ms: None,
+                        total_latency_ms: Some(total_ms),
                         upstream_input_tokens: None,
                         upstream_output_tokens: None,
                         upstream_cache_creation: None,
@@ -908,6 +961,7 @@ pub async fn dispatch(
                         effort_source: effort_log.source,
                         upstream_effort: None,
                         tool_calls: ToolLogFields::request_only(&ctx.tools),
+                        headers: ctx.header_log(),
                     };
                     let _ = state.request_log_tx.try_send(entry);
 
@@ -951,6 +1005,7 @@ pub async fn dispatch(
             };
 
             emit_attempt_started(state, sub_id, vm_name);
+            let mut upstream_capture = crate::proxy::header_log::UpstreamHeaderCapture::default();
             let dispatch_res = openai_responses_dispatch::dispatch_openai_responses_attempt(
                 &state.http_client,
                 api_key_raw.clone(),
@@ -963,9 +1018,15 @@ pub async fn dispatch(
                 client_headers.clone(),
                 required_headers.clone(),
                 extras,
+                &mut upstream_capture,
+                ctx.log_headers,
             )
             .await;
+            // 本 attempt 的 ctx 带上采集到的上游两组头, 之后所有日志行都从它取。
+            let attempt_ctx = ctx.with_upstream_headers(upstream_capture, &source_hints, &client_headers);
+            let ctx = &attempt_ctx;
 
+            let total_ms = start.elapsed().as_millis() as u64;
             match dispatch_res {
                 Ok(ok) => {
                     emit_attempt_finished(state, sub_id, vm_name, true);
@@ -979,6 +1040,7 @@ pub async fn dispatch(
                         real_model,
                         display_name,
                         retry_count,
+                        start,
                         state.request_log_tx.clone(),
                         state.event_log_tx.clone(),
                         state.db.clone(),
@@ -1028,7 +1090,8 @@ pub async fn dispatch(
                             _ => Some(401),
                         },
                         ttft_ms: None,
-                        total_latency_ms: Some(start.elapsed().as_millis() as u64),
+                        first_content_ms: None,
+                        total_latency_ms: Some(total_ms),
                         upstream_input_tokens: None,
                         upstream_output_tokens: None,
                         upstream_cache_creation: None,
@@ -1047,6 +1110,7 @@ pub async fn dispatch(
                         effort_source: effort_log.source,
                         upstream_effort: None,
                         tool_calls: ToolLogFields::request_only(&ctx.tools),
+                        headers: ctx.header_log(),
                     };
                     let _ = state.request_log_tx.try_send(entry);
 
@@ -1086,6 +1150,7 @@ pub async fn dispatch(
             };
 
             emit_attempt_started(state, sub_id, vm_name);
+            let mut upstream_capture = crate::proxy::header_log::UpstreamHeaderCapture::default();
             let dispatch_res =
                 openai_chat_completions_dispatch::dispatch_openai_chat_completions_attempt(
                     &state.http_client,
@@ -1099,9 +1164,15 @@ pub async fn dispatch(
                     client_headers.clone(),
                     required_headers.clone(),
                     extras,
-                )
+                &mut upstream_capture,
+                ctx.log_headers,
+            )
                 .await;
+            // 本 attempt 的 ctx 带上采集到的上游两组头, 之后所有日志行都从它取。
+            let attempt_ctx = ctx.with_upstream_headers(upstream_capture, &source_hints, &client_headers);
+            let ctx = &attempt_ctx;
 
+            let total_ms = start.elapsed().as_millis() as u64;
             match dispatch_res {
                 Ok(ok) => {
                     emit_attempt_finished(state, sub_id, vm_name, true);
@@ -1116,6 +1187,7 @@ pub async fn dispatch(
                             real_model,
                             display_name,
                             retry_count,
+                            start,
                             state.request_log_tx.clone(),
                             state.event_log_tx.clone(),
                             state.db.clone(),
@@ -1168,7 +1240,8 @@ pub async fn dispatch(
                             _ => Some(401),
                         },
                         ttft_ms: None,
-                        total_latency_ms: Some(start.elapsed().as_millis() as u64),
+                        first_content_ms: None,
+                        total_latency_ms: Some(total_ms),
                         upstream_input_tokens: None,
                         upstream_output_tokens: None,
                         upstream_cache_creation: None,
@@ -1187,6 +1260,7 @@ pub async fn dispatch(
                         effort_source: effort_log.source,
                         upstream_effort: None,
                         tool_calls: ToolLogFields::request_only(&ctx.tools),
+                        headers: ctx.header_log(),
                     };
                     let _ = state.request_log_tx.try_send(entry);
 
@@ -1283,15 +1357,16 @@ pub async fn dispatch(
         }
 
         // 出站头组装 (forward → required → auth → content-type, 后插覆盖):
-        // forward_client_headers 开关打开时按内置白名单转发客户端头 (proxy/forward.rs)。
-        let upstream_headers = forward::build_anthropic_passthrough_headers(
+        // 按订阅的 header_policy 转发客户端头, 硬禁止集与优先级见 proxy/forward.rs。
+        let outbound = forward::build_anthropic_passthrough_headers(
             &client_headers,
-            forward_client_headers,
+            &header_policy,
             &forward_headers,
-            &required_headers,
+            &required_tagged,
             &auth_header_name,
             &auth_header_value,
         );
+        let upstream_headers = outbound.to_reqwest();
 
         info!(
             %dispatch_id,
@@ -1305,6 +1380,14 @@ pub async fn dispatch(
 
         emit_attempt_started(state, sub_id, vm_name);
 
+        let mut upstream_capture = crate::proxy::header_log::UpstreamHeaderCapture {
+            request: crate::proxy::header_log::capture_tagged(
+                &outbound.sent,
+                ctx.log_headers,
+                &[api_key_raw.as_str()],
+            ),
+            response: None,
+        };
         let upstream_result = upstream::send(
             &state.http_client,
             &url,
@@ -1313,7 +1396,14 @@ pub async fn dispatch(
             is_streaming,
         )
         .await;
+        if let Ok(r) = &upstream_result {
+            upstream_capture.response = crate::proxy::header_log::serialize(r.headers(), ctx.log_headers);
+        }
+        // 本 attempt 的 ctx 带上采集到的上游两组头, 之后所有日志行 (含流式 sse) 都从它取。
+        let attempt_ctx = ctx.with_upstream_headers(upstream_capture, &source_hints, &client_headers);
+        let ctx = &attempt_ctx;
 
+        let total_ms = start.elapsed().as_millis() as u64;
         match upstream_result {
             Ok(upstream::UpstreamResponse::NonStreaming {
                 status,
@@ -1404,7 +1494,8 @@ pub async fn dispatch(
                     status: req_status,
                     http_status: Some(status.as_u16()),
                     ttft_ms: None,
-                    total_latency_ms: Some(start.elapsed().as_millis() as u64),
+                    first_content_ms: None,
+                    total_latency_ms: Some(total_ms),
                     upstream_input_tokens: extract_usage(&final_body, "input_tokens"),
                     upstream_output_tokens: extract_usage(&final_body, "output_tokens"),
                     upstream_cache_creation: extract_usage(&final_body, "cache_creation_input_tokens"),
@@ -1423,14 +1514,32 @@ pub async fn dispatch(
                     effort_source: effort_log.source,
                     upstream_effort: None,
                     tool_calls,
+                    headers: ctx.header_log(),
                 };
                 let _ = state.request_log_tx.try_send(entry);
 
                 if let ShouldRetry::Yes(_) = should_retry {
+                    if response_headers::UpstreamError::is_replayable(status) {
+                        last_upstream_error = Some(response_headers::UpstreamError {
+                            status,
+                            headers: resp_headers.clone(),
+                            body: Bytes::from(body_text.clone().unwrap_or_default()),
+                        });
+                    }
                     retry_count += 1;
                     continue;
                 }
 
+                if !is_success {
+                    // 错误体原样字节回传, 不走 JSON 重序列化 (非 JSON 错误体会被
+                    // upstream::send 包成 {"raw": ..}, 原文会丢)。
+                    return Ok(response_headers::UpstreamError {
+                        status,
+                        headers: resp_headers,
+                        body: Bytes::from(body_text.unwrap_or_default()),
+                    }
+                    .into_response());
+                }
                 return Ok(build_non_streaming_response(status, resp_headers, final_body));
             }
             Ok(upstream::UpstreamResponse::Streaming {
@@ -1457,12 +1566,20 @@ pub async fn dispatch(
                         retry_count += 1;
                         continue;
                     } else {
-                        return Ok(build_error_status(status));
+                        // upstream::send 只把 2xx 包成 Streaming, 这里理论上走不到;
+                        // 兜底仍按透传语义回上游状态码与响应头。
+                        return Ok(response_headers::UpstreamError {
+                            status,
+                            headers: resp_headers,
+                            body: Bytes::new(),
+                        }
+                        .into_response());
                     }
                 }
 
                 // 智谱等上游用 200 + `event: error` 表达限流; 不 peek 会被透传成假成功.
                 let peek = sse::peek_first_event(stream).await;
+                let total_ms = start.elapsed().as_millis() as u64;
                 match peek {
                     sse::PeekResult::UpstreamError {
                         code,
@@ -1510,7 +1627,8 @@ pub async fn dispatch(
                             // HTTP 仍然是 200, 但语义层是错误; error_message 区分
                             http_status: Some(200),
                             ttft_ms: None,
-                            total_latency_ms: Some(start.elapsed().as_millis() as u64),
+                            first_content_ms: None,
+                            total_latency_ms: Some(total_ms),
                             upstream_input_tokens: None,
                             upstream_output_tokens: None,
                             upstream_cache_creation: None,
@@ -1532,6 +1650,7 @@ pub async fn dispatch(
                             effort_source: effort_log.source,
                             upstream_effort: None,
                             tool_calls: ToolLogFields::request_only(&ctx.tools),
+                            headers: ctx.header_log(),
                         };
                         let _ = state.request_log_tx.try_send(entry);
 
@@ -1563,7 +1682,8 @@ pub async fn dispatch(
                             status: RequestStatus::Error,
                             http_status: Some(200),
                             ttft_ms: None,
-                            total_latency_ms: Some(start.elapsed().as_millis() as u64),
+                            first_content_ms: None,
+                            total_latency_ms: Some(total_ms),
                             upstream_input_tokens: None,
                             upstream_output_tokens: None,
                             upstream_cache_creation: None,
@@ -1582,6 +1702,7 @@ pub async fn dispatch(
                             effort_source: effort_log.source,
                             upstream_effort: None,
                             tool_calls: ToolLogFields::request_only(&ctx.tools),
+                            headers: ctx.header_log(),
                         };
                         let _ = state.request_log_tx.try_send(entry);
                         retry_count += 1;
@@ -1696,7 +1817,8 @@ pub async fn dispatch(
                     status: RequestStatus::Error,
                     http_status: None,
                     ttft_ms: None,
-                    total_latency_ms: Some(start.elapsed().as_millis() as u64),
+                    first_content_ms: None,
+                    total_latency_ms: Some(total_ms),
                     upstream_input_tokens: None,
                     upstream_output_tokens: None,
                     upstream_cache_creation: None,
@@ -1715,6 +1837,7 @@ pub async fn dispatch(
                     effort_source: effort_log.source,
                     upstream_effort: None,
                     tool_calls: ToolLogFields::request_only(&ctx.tools),
+                    headers: ctx.header_log(),
                 };
                 let _ = state.request_log_tx.try_send(entry);
 
@@ -1724,13 +1847,20 @@ pub async fn dispatch(
         }
     }
 
-    // 所有候选都失败
+    // 所有候选都失败: 最后一次尝试是透传路径上游 4xx → 原样回给客户端。
+    if let Some(e) = last_upstream_error {
+        return Ok(e.into_response());
+    }
     let subs_map = state.subscriptions.read().await;
     let mut summary = Vec::new();
+    let mut cooldowns_ms: Vec<i64> = Vec::new();
     let now = Utc::now();
     for sub_id in &vm_config.subscription_ids {
         if let Some(rt) = subs_map.get(sub_id) {
             let g = rt.read().await;
+            if let Some(until) = g.cooldown_until {
+                cooldowns_ms.push((until - now).num_milliseconds());
+            }
             // fallback 下因未配置兜底槽被跳过的翻译类订阅: 状态显示 Available 却没被使用,
             // 不注明的话用户无从排查「明明可用为什么 503」。
             if skipped_wrong_protocol.contains(&g.row.display_name) {
@@ -1761,7 +1891,9 @@ pub async fn dispatch(
         })),
     );
 
-    Ok(overloaded::response_with_summary(vm_name, &summary))
+    let mut resp = overloaded::response_with_summary(vm_name, &summary);
+    response_headers::set_retry_after(resp.headers_mut(), response_headers::retry_after_secs(cooldowns_ms));
+    Ok(resp)
 }
 
 fn rewrite_response_model(mut body: Value, virtual_name: &str) -> Value {
@@ -1796,32 +1928,15 @@ fn build_non_streaming_response(
     let mut response = Response::new(axum::body::Body::from(body_bytes));
     *response.status_mut() = status;
     let hdrs = response.headers_mut();
-    if let Some(ct) = upstream_headers.get(reqwest::header::CONTENT_TYPE) {
-        if let Ok(name) = HeaderName::try_from("content-type") {
-            if let Ok(value) = HeaderValue::from_bytes(ct.as_bytes()) {
-                hdrs.insert(name, value);
-            }
-        }
-    } else {
-        hdrs.insert(
-            axum::http::header::CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
-    }
+    response_headers::copy_passthrough_response_headers(&upstream_headers, hdrs);
+    // body 已重新序列化成 JSON, content-type 固定为 JSON (上游可能没带或带了别的)。
+    hdrs.insert(
+        axum::http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
     response
 }
 
-fn build_error_status(status: reqwest::StatusCode) -> Response {
-    let axum_status = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-    (
-        axum_status,
-        Json(error_body(
-            "upstream_error",
-            &format!("upstream returned {}", status.as_u16()),
-        )),
-    )
-        .into_response()
-}
 
 
 #[cfg(test)]

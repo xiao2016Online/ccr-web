@@ -27,6 +27,26 @@ pub enum UpstreamResponse {
     },
 }
 
+impl UpstreamResponse {
+    /// Response headers of either variant (request-log capture).
+    pub fn headers(&self) -> &ReqHeaderMap {
+        match self {
+            Self::NonStreaming { headers, .. } | Self::Streaming { headers, .. } => headers,
+        }
+    }
+}
+
+/// User-Agent reqwest adds to every upstream request that does not set one
+/// (Codex / Kiro set their own). Shown in the request log's outbound table.
+pub const DEFAULT_USER_AGENT: &str = concat!("cc-router/", env!("CARGO_PKG_VERSION"));
+
+/// Observability only: reqwest/tower-http inserts this at send time when no
+/// Accept-Encoding is set (including requests with Range in reqwest 0.13.5).
+/// Do not set it on requests ourselves: let reqwest negotiate supported codecs.
+/// The compression socket tests compare logs/preview with the actual wire header
+/// so a dependency upgrade cannot silently make this value stale.
+pub const DEFAULT_ACCEPT_ENCODING: &str = "zstd,gzip,deflate,br";
+
 /// Idle limit of the production upstream client (see [`build_client`]).
 pub const UPSTREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -41,7 +61,7 @@ pub fn build_client(idle: Duration) -> reqwest::Result<reqwest::Client> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .read_timeout(idle)
-        .user_agent(concat!("cc-router/", env!("CARGO_PKG_VERSION")))
+        .user_agent(DEFAULT_USER_AGENT)
         .build()
 }
 

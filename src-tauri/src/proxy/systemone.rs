@@ -329,6 +329,7 @@ pub fn log_entry(
         status,
         http_status,
         ttft_ms: None,
+        first_content_ms: None,
         total_latency_ms: Some(latency_ms),
         upstream_input_tokens: input,
         upstream_output_tokens: output,
@@ -348,6 +349,7 @@ pub fn log_entry(
         effort_source: None,
         upstream_effort: None,
         tool_calls: ToolLogFields::empty(),
+        headers: ctx.header_log(),
     }
 }
 
@@ -356,6 +358,8 @@ struct LiveSink<'s> {
     ctx: &'s ClientContext,
     mode: RoutingMode,
     start: Instant,
+    /// 最近一次 send 采集到的上游两组头, record 写日志时取用。
+    capture: crate::proxy::header_log::UpstreamHeaderCapture,
 }
 
 impl AttemptSink for LiveSink<'_> {
@@ -370,6 +374,15 @@ impl AttemptSink for LiveSink<'_> {
             }
             info!(sub_id = %c.sub_id, display_name = %c.display_name, real_model = %c.outbound.real_model, url = %c.outbound.url, "forwarding systemone request");
             emit_attempt_started(self.state, c.sub_id, VirtualModelName::Jev);
+            let api_key = c.rt.read().await.row.api_key.clone();
+            self.capture = crate::proxy::header_log::UpstreamHeaderCapture {
+                request: crate::proxy::header_log::capture_untagged(
+                    &c.outbound.headers,
+                    self.ctx.log_headers,
+                    &[api_key.as_str()],
+                ),
+                response: None,
+            };
             let result = upstream::send(
                 &self.state.http_client,
                 &c.outbound.url,
@@ -378,6 +391,9 @@ impl AttemptSink for LiveSink<'_> {
                 false,
             )
             .await;
+            if let Ok(resp) = &result {
+                self.capture.response = crate::proxy::header_log::serialize(resp.headers(), self.ctx.log_headers);
+            }
             let r = match result {
                 Ok(upstream::UpstreamResponse::NonStreaming { status, body, body_text, .. }) => {
                     AttemptResult::Http { status, body, body_text }
@@ -406,7 +422,15 @@ impl AttemptSink for LiveSink<'_> {
             )
             .await;
             let latency = self.start.elapsed().as_millis() as u64;
-            let _ = self.state.request_log_tx.try_send(log_entry(c, r, retry_count, self.ctx, latency));
+            // System One never forwards client headers: an empty client map
+            // keeps the classifier from ever reporting `forwarded`.
+            let hints = c.rt.read().await.row.source_hints();
+            let attempt_ctx = self.ctx.with_upstream_headers(
+                std::mem::take(&mut self.capture),
+                &hints,
+                &axum::http::HeaderMap::new(),
+            );
+            let _ = self.state.request_log_tx.try_send(log_entry(c, r, retry_count, &attempt_ctx, latency));
         })
     }
 }
@@ -474,7 +498,7 @@ pub async fn dispatch(state: &AppState, raw_body: Bytes, client_model: String, c
         });
     }
 
-    let mut sink = LiveSink { state, ctx, mode: vm_config.mode, start: Instant::now() };
+    let mut sink = LiveSink { state, ctx, mode: vm_config.mode, start: Instant::now(), capture: Default::default() };
     match run_candidates(&cands, &mut sink).await {
         LoopEnd::Done { index, status, body } => {
             let body = if status.is_success() {

@@ -17,6 +17,7 @@ use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::observability::events::{EventEntry, EventKind, Severity};
+use crate::proxy::header_log::HeaderLogFields;
 use crate::proxy::tool_log::{ToolLogFields, TRUNCATED_MARKER};
 use crate::subscription::model::SubscriptionRuntime;
 use crate::subscription::quota::QuotaPeriod;
@@ -134,6 +135,8 @@ pub struct RequestLogEntry {
     pub status: RequestStatus,
     pub http_status: Option<u16>,
     pub ttft_ms: Option<u64>,
+    /// First effective content, distinct from legacy first-byte ttft_ms.
+    pub first_content_ms: Option<u64>,
     pub total_latency_ms: Option<u64>,
     pub upstream_input_tokens: Option<u32>,
     pub upstream_output_tokens: Option<u32>,
@@ -167,6 +170,8 @@ pub struct RequestLogEntry {
     /// 工具调用观测五格 (stop_reason / 声明数 / 回传数 / 调用数 / 调用名), 见 [`crate::proxy::tool_log`]。
     /// 刻意用无 `Default` 的子结构: 任何构造点漏写都编译失败。
     pub tool_calls: ToolLogFields,
+    /// 三组请求头 (proxy/header_log.rs), 纯观测, 拿不到就是 None。
+    pub headers: HeaderLogFields,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -424,16 +429,17 @@ pub(crate) async fn flush_batch(
             "INSERT INTO requests (id, timestamp, virtual_model_name, subscription_id,
                 provider_id, endpoint_id, real_model_name, response_model_name,
                 is_streaming, status,
-                http_status, ttft_ms, total_latency_ms,
+                http_status, ttft_ms, first_content_ms, total_latency_ms,
                 upstream_input_tokens, upstream_output_tokens,
                 upstream_cache_creation, upstream_cache_read,
                 retry_count, error_message, upstream_response_body,
                 client_tool, client_user_agent, client_version, client_ip,
                 entry_kind, downstream_http_version,
                 client_effort, effective_effort, effort_source, upstream_effort,
-                stop_reason, tools_offered_count, tool_result_count, tool_use_count, tool_use_names)
+                stop_reason, tools_offered_count, tool_result_count, tool_use_count, tool_use_names,
+                client_request_headers, upstream_request_headers, upstream_response_headers)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                     ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(entry.id.to_string())
         .bind(entry.timestamp_ms)
@@ -447,6 +453,7 @@ pub(crate) async fn flush_batch(
         .bind(entry.status.as_str())
         .bind(entry.http_status.map(|v| v as i64))
         .bind(entry.ttft_ms.map(|v| v as i64))
+        .bind(entry.first_content_ms.map(|v| v as i64))
         .bind(entry.total_latency_ms.map(|v| v as i64))
         .bind(entry.upstream_input_tokens.map(|v| v as i64))
         .bind(entry.upstream_output_tokens.map(|v| v as i64))
@@ -470,6 +477,9 @@ pub(crate) async fn flush_batch(
         .bind(entry.tool_calls.tool_result_count.map(|v| v as i64))
         .bind(entry.tool_calls.tool_use_count.map(|v| v as i64))
         .bind(entry.tool_calls.tool_use_names)
+        .bind(entry.headers.client_request)
+        .bind(entry.headers.upstream_request)
+        .bind(entry.headers.upstream_response)
         .execute(&mut *tx)
         .await;
         if let Err(e) = result {
@@ -637,6 +647,7 @@ mod tests {
             status,
             http_status: Some(200),
             ttft_ms: None,
+            first_content_ms: None,
             total_latency_ms: latency_ms,
             upstream_input_tokens: in_tokens,
             upstream_output_tokens: out_tokens,
@@ -656,7 +667,25 @@ mod tests {
             effort_source: None,
             upstream_effort: None,
             tool_calls: crate::proxy::tool_log::ToolLogFields::empty(),
+            headers: crate::proxy::header_log::HeaderLogFields::none(),
         }
+    }
+
+    /// First-content timing keeps zero distinct from unknown and persists with the log batch.
+    #[tokio::test]
+    async fn flush_persists_first_content_including_zero_and_unknown() {
+        let pool = fresh_pool().await;
+        let sub = Uuid::new_v4();
+        let mut entries = Vec::new();
+        for first in [Some(850), Some(0), None] {
+            let mut entry = make_entry(1000, VirtualModelName::Sonnet, sub, "p", RequestStatus::Success, Some(5000), Some(10), Some(200));
+            entry.first_content_ms = first;
+            entries.push(entry);
+        }
+        flush_batch(&pool, entries, vec![]).await.unwrap();
+        let values: Vec<Option<i64>> = sqlx::query_scalar("SELECT first_content_ms FROM requests ORDER BY first_content_ms")
+            .fetch_all(&pool).await.unwrap();
+        assert_eq!(values, vec![None, Some(0), Some(850)]);
     }
 
     /// 工具调用 5 列: 有值能读回; request_only 的 entry 响应侧三列为 NULL。
@@ -706,6 +735,34 @@ mod tests {
         assert_eq!(r.try_get::<Option<i64>, _>("tools_offered_count").unwrap(), Some(12));
         assert_eq!(r.try_get::<Option<i64>, _>("tool_use_count").unwrap(), None);
         assert_eq!(r.try_get::<Option<String>, _>("tool_use_names").unwrap(), None);
+    }
+
+    /// 请求头三列: 有值能读回, HeaderLogFields::none() 落 NULL。
+    #[tokio::test]
+    async fn header_columns_roundtrip() {
+        let pool = fresh_pool().await;
+        let sub = Uuid::new_v4();
+        let day_start = 1_704_067_200_000;
+        let mut with = make_entry(day_start, VirtualModelName::Sonnet, sub, "anthropic", RequestStatus::Success, Some(1), Some(1), Some(1));
+        with.headers = HeaderLogFields {
+            client_request: Some(r#"[["x-app","cli"]]"#.into()),
+            upstream_request: Some(r#"[["anthropic-beta","a"]]"#.into()),
+            upstream_response: Some(r#"[["request-id","r1"]]"#.into()),
+        };
+        let with_id = with.id.to_string();
+        let bare = make_entry(day_start + 1, VirtualModelName::Sonnet, sub, "anthropic", RequestStatus::Success, Some(1), Some(1), Some(1));
+        let bare_id = bare.id.to_string();
+        flush_batch(&pool, vec![with, bare], vec![]).await.expect("flush ok");
+
+        let q = "SELECT client_request_headers, upstream_request_headers, upstream_response_headers FROM requests WHERE id = ?";
+        let r = sqlx::query(q).bind(&with_id).fetch_one(&pool).await.unwrap();
+        assert_eq!(r.try_get::<String, _>("client_request_headers").unwrap(), r#"[["x-app","cli"]]"#);
+        assert_eq!(r.try_get::<String, _>("upstream_request_headers").unwrap(), r#"[["anthropic-beta","a"]]"#);
+        assert_eq!(r.try_get::<String, _>("upstream_response_headers").unwrap(), r#"[["request-id","r1"]]"#);
+        let r = sqlx::query(q).bind(&bare_id).fetch_one(&pool).await.unwrap();
+        for c in ["client_request_headers", "upstream_request_headers", "upstream_response_headers"] {
+            assert_eq!(r.try_get::<Option<String>, _>(c).unwrap(), None, "{c}");
+        }
     }
 
     /// 思考强度四列: 有值能读回, 老式全 None 的 entry 也照常落库 (NULL)。

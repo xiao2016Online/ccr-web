@@ -95,6 +95,41 @@ pub struct ClientContext {
     pub session_key: Option<String>,
     /// 请求侧工具形状 (声明工具数 / 回传 tool_result 数), 对 Anthropic 形态 body 算一次。
     pub tools: crate::proxy::tool_log::RequestToolShape,
+    /// 入站请求头, 已脱敏序列化 (proxy/header_log.rs); 关闭「记录请求头」时为 None。
+    pub request_headers_log: Option<String>,
+    /// 本请求是否记录请求头 (settings.log_request_headers 在入口处读一次)。
+    pub log_headers: bool,
+    /// 当前 attempt 发往上游的请求头 / 上游返回的响应头 (已脱敏序列化)。pipeline 每次 attempt
+    /// 发送后用 [`ClientContext::with_upstream_headers`] 生成本 attempt 的 ctx; 入口处恒为 None。
+    pub upstream_request_headers_log: Option<String>,
+    pub upstream_response_headers_log: Option<String>,
+}
+
+impl ClientContext {
+    /// 本 attempt 的 ctx: 带上刚采集到的上游两组头, 其余字段不变。
+    pub fn with_upstream_headers(
+        &self,
+        cap: crate::proxy::header_log::UpstreamHeaderCapture,
+        hints: &crate::proxy::header_log::SourceHints,
+        client_headers: &axum::http::HeaderMap,
+    ) -> Self {
+        Self {
+            upstream_request_headers_log: cap
+                .request
+                .and_then(|c| crate::proxy::header_log::tag_capture(c, hints, client_headers)),
+            upstream_response_headers_log: cap.response,
+            ..self.clone()
+        }
+    }
+
+    /// 请求日志行的三列请求头。
+    pub fn header_log(&self) -> crate::proxy::header_log::HeaderLogFields {
+        crate::proxy::header_log::HeaderLogFields {
+            client_request: self.request_headers_log.clone(),
+            upstream_request: self.upstream_request_headers_log.clone(),
+            upstream_response: self.upstream_response_headers_log.clone(),
+        }
+    }
 }
 
 /// 入口: 按规则识别 headers, 返回 ClientInfo.

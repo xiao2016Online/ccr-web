@@ -7,7 +7,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=flat-square&logo=tauri&logoColor=white" alt="Tauri 2">
-  <img src="https://img.shields.io/badge/Rust-1.90+-DEA584?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.90+">
+  <img src="https://img.shields.io/badge/Rust-1.94+-DEA584?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.94+">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5">
   <img src="https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
@@ -177,7 +177,8 @@ The three chat entry points share the same subscriptions, virtual models, quotas
 - This is the primary inbound: requests are passed through verbatim with no protocol translation, so thinking, `output_config.effort`, `cache_control`, images and tool calls all keep their native Anthropic semantics.
 - The full Claude Code env example is in "Using with Claude Code" above; Claude Desktop needs local HTTPS, see the [setup guide](https://ccrouter.app/docs/claude-desktop-integration/).
 - Session affinity keys on the `x-claude-code-session-id` header first, then `metadata.user_id`.
-- With "Forward client headers" enabled on a subscription's edit page, whitelisted headers such as `anthropic-beta` / `anthropic-version` are forwarded to that upstream as-is; set per subscription, off by default.
+- Each subscription has a "Header forwarding" setting on its edit page: don't forward / Claude Code preset / allowlist / denylist / forward all. Official Anthropic subscriptions default to the Claude Code preset (`anthropic-*`, `x-claude-code-*`, …); everything else defaults to not forwarding. Credential headers are never forwarded in any mode. Subscriptions can also add custom headers.
+- Auto mode's server-side classifier is only provided by the official Anthropic upstream. If any slot Claude Code uses routes to a third-party provider, Claude Code shows "this session isn't eligible"; set `CLAUDE_CODE_AUTO_MODE_SERVER=0` to silence it (billing is unchanged).
 
 </details>
 
@@ -340,6 +341,22 @@ Settings → Web UI → once enabled, open `http://127.0.0.1:23456/ui/` in a bro
   </tr>
 </table>
 
+### Time-based virtual models
+
+Keep the same virtual model in your client while cc-router switches each subscription slot's real model by day of the week and time of day. In the desktop app's subscription editor, you can configure schedules independently for `fable`, `opus`, `sonnet`, and `haiku`.
+
+- **Schedule your models** — Choose the days, start and end times, and real model for each rule. The calendar previews the weekly schedule, and rules can be copied to other slots.
+- **Use a default model** — When no time rule matches, the slot uses its default model. If no default is configured, that subscription is excluded from the slot's routing during uncovered times.
+- **Preview routing** — On the virtual models page, choose a day and drag the timeline to inspect model mappings and routing at that time. Click “Now” to return to the current time. Schedules use the clock of the computer running cc-router.
+
+**Model slots: time rules and weekly calendar preview**
+
+![cc-router model slot time rules and weekly calendar preview](assets/screenshots/en/slot-schedules.png)
+
+**Virtual models: subscriptions, model mappings, and active hours**
+
+![cc-router time-based virtual model routing and active hours preview](assets/screenshots/en/virtual-model-schedules.png)
+
 ## FAQ & Use Cases
 
 <details>
@@ -398,7 +415,7 @@ Example: subscription A = GLM-5 / MiniMax-2.7 / DeepSeek-Flash; subscription B =
 - Tailwind 4
 - React 19
 
-Prerequisites: Node.js ≥ 20 (pnpm recommended), Rust ≥ 1.90 (the latest stable via rustup is recommended), Xcode Command Line Tools (macOS).
+Prerequisites: Node.js ≥ 22.22 (pnpm recommended), Rust ≥ 1.94 (the latest stable via rustup is recommended), Xcode Command Line Tools (macOS).
 
 ```bash
 pnpm install
@@ -430,7 +447,7 @@ Tauri's Windows bundling depends on MSVC, and CI builds with `x86_64-pc-windows-
 
 ```powershell
 rustup show          # the active toolchain should end with -msvc
-rustc --version      # should be >= 1.90
+rustc --version      # should be >= 1.94
 ```
 
 **2. Visual Studio Build Tools are required**

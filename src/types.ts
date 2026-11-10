@@ -380,8 +380,10 @@ export interface SubscriptionDto {
   auth_header_format: AuthHeaderFormat;
   required_headers: Record<string, string>;
   forward_headers: string[];
-  /** 「透传客户端请求头」开关 (仅 auth_type=api_key 的透传路径消费, 默认 false) */
-  forward_client_headers: boolean;
+  /** 客户端请求头透传策略 (仅 auth_type=api_key 的透传路径消费) */
+  header_policy: HeaderPolicy;
+  /** 用户自定义出站头 (所有订阅可编辑, yaml 重拍不覆盖) */
+  extra_headers: Record<string, string>;
   /** 创建时快照的端点协议, 之后不可变。systemone 订阅只能绑 model-jev, 反之亦然。 */
   endpoint_protocol: EndpointProtocol;
   /** Provider params as entered (e.g. account_id); resolved strings are already in base_url etc. */
@@ -495,13 +497,23 @@ export interface ConnectionPatch {
   required_headers?: Record<string, string>;
 }
 
+export type HeaderPolicyMode = "none" | "claude_code" | "allowlist" | "denylist" | "all";
+
+/** 客户端请求头透传策略。names 只在 allowlist / denylist 下有意义, 末尾 `*` 表示前缀匹配。 */
+export interface HeaderPolicy {
+  mode: HeaderPolicyMode;
+  names: string[];
+}
+
 export interface SubscriptionPatch {
   display_name?: string;
   model_slots?: ModelSlots;
   /** 每槽位 effort 覆盖, 整块替换 (与 model_slots 一致, 无 per-slot patch) */
   slot_efforts?: SlotEfforts;
-  /** 「透传客户端请求头」开关 (仅透传订阅显示, 内置/自定义均可改) */
-  forward_client_headers?: boolean;
+  /** 客户端请求头透传策略 (仅透传订阅显示, 内置/自定义均可改) */
+  header_policy?: HeaderPolicy;
+  /** 用户自定义出站头, 整块替换 */
+  extra_headers?: Record<string, string>;
   /** 内置订阅: 切换 endpoint, 后端 re-snapshot */
   endpoint_id?: string;
   /** 内置订阅: 改 url_params (可与 endpoint_id 同发), 后端与现有值合并后整体重新快照; 自定义订阅会被拒绝 */
@@ -597,6 +609,8 @@ export interface Settings {
    * 默认关闭。
    */
   debug_mode: boolean;
+  /** 请求日志是否记录三组请求头 (凭据脱敏), 默认开 */
+  log_request_headers: boolean;
   /** 入站请求体上限 (MiB), 默认 32。修改需重启 app 才生效 (router 构建时读取)。 */
   max_request_body_mb: number;
   /** 是否在代理端口上提供网页管理界面 (/ui)。默认 false，改动即时生效 */
@@ -631,6 +645,8 @@ export interface SettingsPatch {
   preferred_language?: "system" | "zh" | "zh-Hant" | "en" | "ja";
   update_source?: UpdateSource;
   debug_mode?: boolean;
+  /** 请求日志是否记录三组请求头 (凭据脱敏), 默认开 */
+  log_request_headers?: boolean;
   max_request_body_mb?: number;
   web_ui_enabled?: boolean;
   web_ui_auth_enabled?: boolean;
@@ -740,6 +756,31 @@ export const CLIENT_TOOL_UNKNOWN_SENTINEL = "__unknown__";
  */
 export const TOOL_NAME_TRUNCATED_MARKER = "…";
 
+/** 一组请求头: `[name, value]` 有序对, 名字小写, 凭据已脱敏。null = 没有记录 (老日志或关了「记录请求头」)。 */
+export type HeaderPairs = [string, string][] | null;
+
+/** 出站请求头的来源, 由后端组装时记录 (Rust `proxy/header_source.rs::HeaderSource`)。 */
+export type OutboundSource = "forwarded" | "provider" | "custom" | "auth" | "cc_router";
+
+/** 发往上游的请求头: `[name, value, source]`。 */
+export type OutboundHeaderRows = [string, string, OutboundSource][] | null;
+
+/** 客户端请求头没发出去的原因 (Rust `proxy/forward.rs::DropReason`)。 */
+export type DropReason = "hard_denied" | "not_selected" | "overridden";
+
+/** 发送效果预览 (preview_outbound_headers): 示例客户端请求按当前草稿组装后的结果, 值已脱敏。 */
+export interface HeaderPreview {
+  sent: { name: string; value: string; source: OutboundSource }[];
+  dropped: { name: string; value: string; reason: DropReason }[];
+}
+
+/** 请求详情弹窗的三组请求头 (get_request_headers)。 */
+export interface RequestHeaders {
+  client_request: HeaderPairs;
+  upstream_request: OutboundHeaderRows;
+  upstream_response: HeaderPairs;
+}
+
 export interface RequestLogDto {
   id: string;
   timestamp: number;
@@ -754,6 +795,9 @@ export interface RequestLogDto {
   status: RequestStatus;
   http_status?: number;
   total_latency_ms?: number;
+  /** 本次上游尝试到首次有效正文、思考或工具内容；历史 / 非流式为空。 */
+  first_content_ms?: number | null;
+  /** 成功流式的输出 token / 首字后的秒数；不可计算时为空。 */
   input_tokens?: number;
   output_tokens?: number;
   cache_creation_tokens?: number;

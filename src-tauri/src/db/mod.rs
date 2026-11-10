@@ -117,6 +117,15 @@ const MIGRATIONS: &[(u32, &str)] = &[
         27,
         include_str!("../../migrations/027_add_slot_schedules.sql"),
     ),
+    (
+        28,
+        include_str!("../../migrations/028_add_header_policy_and_extra_headers.sql"),
+    ),
+    (
+        29,
+        include_str!("../../migrations/029_add_request_header_logs.sql"),
+    ),
+    (30, include_str!("../../migrations/030_add_request_first_content.sql")),
 ];
 
 pub async fn init_pool(db_path: &Path) -> AppResult<SqlitePool> {
@@ -408,7 +417,7 @@ mod tests {
         run_migrations(&pool).await.expect("migrate fresh");
 
         let versions = applied_versions(&pool).await;
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]);
         assert!(!has_column(&pool, "subscriptions", "supports_thinking_blocks").await);
         assert!(!has_column(&pool, "subscriptions", "thinking_block_field_name").await);
         assert!(has_column(&pool, "requests", "upstream_response_body").await);
@@ -466,7 +475,7 @@ mod tests {
         run_migrations(&pool).await.expect("migrate legacy");
 
         let versions = applied_versions(&pool).await;
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]); // baseline v=1, 然后跑增量
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]); // baseline v=1, 然后跑增量
         assert!(!has_column(&pool, "subscriptions", "supports_thinking_blocks").await);
         assert!(!has_column(&pool, "subscriptions", "thinking_block_field_name").await);
         assert!(has_column(&pool, "requests", "upstream_response_body").await);
@@ -482,7 +491,7 @@ mod tests {
         run_migrations(&pool).await.expect("third run");
 
         let versions = applied_versions(&pool).await;
-        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]); // 没有重复写
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]); // 没有重复写
     }
 
     /// 在 v4 schema 状态下插一条订阅 (含已 v7 移除的 supports_thinking_blocks 列)。
@@ -548,7 +557,7 @@ mod tests {
         assert!(!has_table(&pool, "subscriptions_new").await);
         assert_eq!(
             applied_versions(&pool).await,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
         );
 
         let count: (i64,) =
@@ -881,6 +890,46 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(again.0 as usize, expected.len() + 1);
+    }
+
+    #[tokio::test]
+    async fn v27_adds_request_header_columns() {
+        let pool = in_memory_pool().await;
+        run_migrations(&pool).await.unwrap();
+        for c in ["client_request_headers", "upstream_request_headers", "upstream_response_headers"] {
+            assert!(has_column(&pool, "requests", c).await, "{c}");
+        }
+    }
+
+    /// v26: forward_client_headers 换算成 header_policy; extra_headers 默认空对象。
+    #[tokio::test]
+    async fn migration_028_maps_forward_flag() {
+        let pool = in_memory_pool().await;
+        let v28 = MIGRATIONS.iter().position(|(v, _)| *v == 28).unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS _schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        apply_migrations(&pool, 0..v28).await;
+        insert_v13_subscription(&pool, "anthropic", "default").await;
+        insert_v13_subscription(&pool, "deepseek", "default").await;
+        sqlx::query("UPDATE subscriptions SET forward_client_headers = 1 WHERE provider_id = 'anthropic'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        apply_migrations(&pool, v28..v28 + 1).await;
+
+        let rows: Vec<(String, String, String)> = sqlx::query_as(
+            "SELECT provider_id, header_policy, extra_headers FROM subscriptions ORDER BY provider_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows[0].0, "anthropic");
+        assert_eq!(rows[0].1, r#"{"mode":"claude_code","names":[]}"#);
+        assert_eq!(rows[1].1, r#"{"mode":"none","names":[]}"#);
+        assert_eq!(rows[0].2, "{}");
+        assert_eq!(rows[1].2, "{}");
     }
 
     #[tokio::test]

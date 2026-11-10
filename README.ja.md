@@ -7,7 +7,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=flat-square&logo=tauri&logoColor=white" alt="Tauri 2">
-  <img src="https://img.shields.io/badge/Rust-1.90+-DEA584?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.90+">
+  <img src="https://img.shields.io/badge/Rust-1.94+-DEA584?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.94+">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5">
   <img src="https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
@@ -177,7 +177,8 @@ cc-router はツールと LLM プロバイダの間に入ります。ツール�
 - これがメインの入口です。リクエストはプロトコル変換なしでそのまま透過され、thinking、`output_config.effort`、`cache_control`、画像、ツール呼び出しはすべて Anthropic ネイティブの意味論で動作します。
 - Claude Code の完全な env 例は上記「Claude Code での利用」を参照。Claude Desktop はローカル HTTPS が必要です。[設定ガイド](https://ccrouter.app/docs/claude-desktop-integration/)を参照してください。
 - セッション親和は `x-claude-code-session-id` ヘッダーを優先し、次に `metadata.user_id` でセッションを識別します。
-- サブスクリプション編集画面で「クライアントヘッダーの転送」を有効にすると、`anthropic-beta` / `anthropic-version` などのホワイトリストヘッダーがその上流へそのまま転送されます。サブスクリプションごとの設定で、既定では無効です。
+- サブスクリプション編集画面の「ヘッダー転送」で、転送しない / Claude Code プリセット / 許可リスト / 拒否リスト / すべて転送 を選べます。Anthropic 公式サブスクリプションの既定は Claude Code プリセット（`anthropic-*`、`x-claude-code-*` など）、それ以外は転送しないが既定です。認証情報系のヘッダーはどのモードでも転送しません。カスタムヘッダーも追加できます。
+- auto mode のサーバー側分類器は Anthropic 公式の上流だけが提供します。Claude Code が使うスロットにサードパーティプロバイダーが含まれると「this session isn't eligible」と表示されます。`CLAUDE_CODE_AUTO_MODE_SERVER=0` を設定すると表示を止められます（課金は変わりません）。
 
 </details>
 
@@ -340,6 +341,22 @@ curl http://127.0.0.1:23456/v1/systemone \
   </tr>
 </table>
 
+### 時間帯別の仮想モデル
+
+クライアントでは同じ仮想モデルを使い続けながら、曜日と時間帯に応じて、各サブスクリプションのスロットに割り当てる実モデルを自動で切り替えられます。デスクトップ app のサブスクリプション編集画面で、`fable`、`opus`、`sonnet`、`haiku` ごとにスケジュールを設定できます。
+
+- **モデルを時間帯で使い分ける** —— ルールごとに曜日、開始・終了時刻、実モデルを選択します。右側のカレンダーで週間スケジュールを確認でき、ルールをほかのスロットへコピーすることもできます。
+- **デフォルトモデルに戻る** —— 一致する時間ルールがない場合は、スロットのデフォルトモデルを使用します。デフォルトを設定していない場合、そのサブスクリプションはルールでカバーされていない時間帯のルーティング対象から外れます。
+- **ルーティングをプレビューする** —— 仮想モデル画面で曜日を選び、タイムラインを動かすと、その時刻のモデルの割り当てとルーティングを確認できます。「Now」で現在時刻に戻ります。スケジュールは cc-router を実行しているコンピュータの時計に従います。
+
+**モデルスロット：時間ルールの設定と週間カレンダー（英語 UI）**
+
+![cc-router のモデルスロットの時間ルールと週間カレンダー（英語 UI）](assets/screenshots/en/slot-schedules.png)
+
+**仮想モデル：サブスクリプション、実モデル、有効な時間帯（英語 UI）**
+
+![cc-router の時間帯別仮想モデルルーティングと有効な時間帯のプレビュー（英語 UI）](assets/screenshots/en/virtual-model-schedules.png)
+
 ## FAQ・ユースケース
 
 <details>
@@ -398,7 +415,7 @@ CC からのリクエストはこのマッピングに従って転送される�
 - Tailwind 4
 - React 19
 
-前提条件: Node.js ≥ 20（pnpm 推奨）、Rust ≥ 1.90（rustup の最新 stable 推奨）、Xcode Command Line Tools（macOS）。
+前提条件: Node.js ≥ 22.22（pnpm 推奨）、Rust ≥ 1.94（rustup の最新 stable 推奨）、Xcode Command Line Tools（macOS）。
 
 ```bash
 pnpm install
@@ -430,7 +447,7 @@ Tauri の Windows バンドルは MSVC に依存しており、CI も `x86_64-pc
 
 ```powershell
 rustup show          # active toolchain の末尾が -msvc であること
-rustc --version      # 1.90 以上であること
+rustc --version      # 1.94 以上であること
 ```
 
 **2. Visual Studio Build Tools が必要**

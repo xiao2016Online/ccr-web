@@ -66,3 +66,8 @@ export function fmtRelativeTime(ms: number, t: (k: string) => string): string {
     return `${Math.floor(diff / 3_600_000)}${t("common.relativeTime.hoursAgo")}`;
   return `${Math.floor(diff / 86_400_000)}${t("common.relativeTime.daysAgo")}`;
 }
+
+/** Request timing metrics share one format in the list, detail and clipboard. */
+export function fmtRequestSeconds(ms?: number | null): string {
+  return ms != null && Number.isFinite(ms) && ms >= 0 ? `${(ms / 1000).toFixed(2)}s` : "—";
+}

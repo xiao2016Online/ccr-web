@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Check, ArrowRight } from "lucide-react";
+import * as TabsPrimitive from "@radix-ui/react-tabs";
+import { useQuery } from "@tanstack/react-query";
+import { Copy, Check } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -7,13 +9,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ClientToolBadge } from "@/components/ClientToolBadge";
+import { HeaderTable, type HeaderTag } from "@/components/request-detail/HeaderTable";
+import { api } from "@/api/tauri";
+import { isReturnedToClient } from "@/lib/headerSources";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 import { useT } from "@/i18n";
-import { fmtNum, fmtTime } from "@/lib/format";
+import { fmtNum, fmtTime, fmtRequestSeconds } from "@/lib/format";
 import { customProviderLabel, providerIconId } from "@/lib/providerLabels";
 import { providerName as localProviderName } from "@/lib/providerText";
-import type { RequestLogDto } from "@/types";
+import type { HeaderPairs, OutboundHeaderRows, OutboundSource, RequestLogDto } from "@/types";
 import { TOOL_NAME_TRUNCATED_MARKER } from "@/types";
 
 interface Props {
@@ -92,6 +97,18 @@ export function RequestDetailDialog({ request, onClose }: Props) {
 
   const open = request !== null;
   const isError = request && request.status !== "success";
+  const [tab, setTab] = useState("overview");
+  useEffect(() => {
+    if (request) setTab("overview");
+  }, [request?.id]);
+
+  const headersQuery = useQuery({
+    queryKey: ["requestHeaders", request?.id],
+    queryFn: () => api.getRequestHeaders(request!.id),
+    enabled: open,
+    staleTime: Infinity,
+  });
+  const headers = headersQuery.data;
 
   const prettyBody = useMemo(() => {
     if (!request?.upstream_response_body) return null;
@@ -120,6 +137,8 @@ export function RequestDetailDialog({ request, onClose }: Props) {
       `real_model: ${request.real_model_name}`,
       `effort: ${effortSummary(request, t) ?? "—"}`,
       `status: ${request.status}`,
+      `total_latency: ${fmtRequestSeconds(request.total_latency_ms)}`,
+      `first_content: ${fmtRequestSeconds(request.first_content_ms)}`,
       `http_status: ${request.http_status ?? "—"}`,
       `stop_reason: ${request.stop_reason ?? "—"}`,
       `tools_offered: ${request.tools_offered_count ?? "—"} · tool_results: ${request.tool_result_count ?? "—"} · tool_uses: ${request.tool_use_count ?? "—"}`,
@@ -129,6 +148,13 @@ export function RequestDetailDialog({ request, onClose }: Props) {
       "upstream_response_body:",
       prettyBody ?? "",
     ];
+    const section = (name: string, pairs: HeaderPairs | OutboundHeaderRows | undefined) => {
+      if (!pairs) return;
+      lines.push("", `${name}:`, ...pairs.map(([k, v, src]) => (src ? `${k}: ${v}  [${src}]` : `${k}: ${v}`)));
+    };
+    section("client_request_headers", headers?.client_request);
+    section("upstream_request_headers", headers?.upstream_request);
+    section("upstream_response_headers", headers?.upstream_response);
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
       setCopied(true);
@@ -141,18 +167,42 @@ export function RequestDetailDialog({ request, onClose }: Props) {
   const dash = <span className="muted">—</span>;
   const monoOr = (v?: string | null) => (v ? <span className="mono">{v}</span> : dash);
 
+  // 发往上游一张表的来源标签: 后端组装时记录, 这里只映射文案与色调
+  const outboundTag = ([, , src]: [string, string, OutboundSource]): HeaderTag => {
+    const tone = src === "forwarded" ? "ok" : src === "cc_router" ? "muted" : "accent";
+    return { label: t(`requestLogs.detail.headers.source.${src}`), tone };
+  };
+  // 回传白名单只作用于 Anthropic 透传路径; 翻译类订阅不显示该标签
+  const showReturned = sub?.auth_type === "api_key";
+  const responseTag = ([name]: [string, string]): HeaderTag | null =>
+    showReturned
+      ? isReturnedToClient(name)
+        ? { label: t("requestLogs.detail.headers.returned"), tone: "ok" }
+        : { label: t("requestLogs.detail.headers.notReturned"), tone: "muted" }
+      : null;
+  const count = (pairs: HeaderPairs | OutboundHeaderRows | undefined) =>
+    headersQuery.isLoading ? "…" : pairs ? String(pairs.length) : "—";
+  // 某组为 null 的原因: 加载失败 > 整行都没记 (没开记录 / 老日志) > 记了入站但这次尝试没发出或没收到响应
+  const recorded = headers?.client_request != null;
+  const emptyText = (kind: "client" | "request" | "response") =>
+    headersQuery.isError
+      ? t("requestLogs.detail.headers.loadFailed")
+      : !recorded || kind === "client"
+        ? t("requestLogs.detail.headers.notRecorded")
+        : kind === "request" || headers?.upstream_request == null
+          ? t("requestLogs.detail.headers.notSent")
+          : t("requestLogs.detail.headers.noResponse");
+  const toolsVisible = request ? hasToolInfo(request) : false;
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent
-        className="cc-dialog rd"
-        style={{ maxWidth: 900, width: "94vw", maxHeight: "88vh", overflow: "auto" }}
-      >
-        <DialogHeader>
+      <DialogContent className="cc-dialog rd rd-split">
+        <DialogHeader className="rd-dialog-head">
           <DialogTitle>{t("requestLogs.detail.title")}</DialogTitle>
         </DialogHeader>
         {request && (
-          <div className="rd-body">
-            {/* 抬头: 状态 / HTTP / 流式 + 时间与请求 ID, 右侧复制全部 */}
+          <>
+            {/* 抬头: 状态 / HTTP / 流式 + 时间与请求 ID, 右侧复制全部 (不随右栏滚动) */}
             <div className="rd-head">
               <div className="rd-head-tags">
                 <span className={`pill ${toneOf(request.status)}`}>
@@ -179,172 +229,191 @@ export function RequestDetailDialog({ request, onClose }: Props) {
               </button>
             </div>
 
-            {/* 路由路径: 客户端 → 虚拟模型 → 订阅 → 真实模型 */}
-            <section className="rd-route" aria-label={t("requestLogs.detail.section.route")}>
-              <div className="rd-node">
-                <div className="rd-node-label">{t("requestLogs.detail.clientTool")}</div>
-                <div className="rd-node-value">
-                  <ClientToolBadge toolId={request.client_tool} userAgent={request.client_user_agent} />
-                </div>
-                <div className="rd-node-sub mono">{request.client_version ?? "—"}</div>
-              </div>
-              <ArrowRight className="rd-arrow" size={16} aria-hidden />
-              <div className="rd-node">
-                <div className="rd-node-label">{t("requestLogs.detail.virtualModel")}</div>
-                <div className="rd-node-value mono">{request.virtual_model_name}</div>
-                <div className="rd-node-sub mono">
-                  {request.entry_kind ? `/v1/${request.entry_kind}` : "—"}
-                </div>
-              </div>
-              <ArrowRight className="rd-arrow" size={16} aria-hidden />
-              <div className="rd-node">
-                <div className="rd-node-label">{t("requestLogs.detail.subscription")}</div>
-                <div className="rd-node-value rd-node-sub-row">
-                  <ProviderLogo
-                    iconId={sub?.provider_icon ?? providerIconId(request.provider_id)}
-                    size={20}
-                    iconSize={13}
-                  />
-                  <span className="rd-ellipsis">{sub?.display_name ?? providerName}</span>
-                </div>
-                <div className="rd-node-sub">{providerName}</div>
-              </div>
-              <ArrowRight className="rd-arrow" size={16} aria-hidden />
-              <div className="rd-node accent">
-                <div className="rd-node-label">{t("requestLogs.detail.realModel")}</div>
-                <div className="rd-node-value mono strong rd-ellipsis" title={request.real_model_name}>
-                  {request.real_model_name}
-                </div>
-                <div className="rd-node-sub mono rd-ellipsis" title={request.response_model_name}>
-                  {request.response_model_name && request.response_model_name !== request.real_model_name
-                    ? `${t("requestLogs.detail.responseModel")} ${request.response_model_name}`
-                    : effortSummaryShort(request, t) ?? "—"}
-                </div>
-              </div>
-            </section>
+            <TabsPrimitive.Root
+              value={tab}
+              onValueChange={setTab}
+              orientation="vertical"
+              className="rd-split-body"
+            >
+              <TabsPrimitive.List className="rd-nav" aria-label={t("requestLogs.detail.title")}>
+                <TabsPrimitive.Trigger value="overview" className="rd-nav-item">
+                  {t("requestLogs.detail.nav.overview")}
+                </TabsPrimitive.Trigger>
+                <TabsPrimitive.Trigger value="request" className="rd-nav-item">
+                  {t("requestLogs.detail.nav.request")}
+                </TabsPrimitive.Trigger>
+                {toolsVisible && (
+                  <TabsPrimitive.Trigger value="tools" className="rd-nav-item">
+                    {t("requestLogs.detail.tools.title")}
+                  </TabsPrimitive.Trigger>
+                )}
+                <div className="rd-nav-group" role="presentation" aria-hidden="true">{t("requestLogs.detail.nav.headersGroup")}</div>
+                <TabsPrimitive.Trigger value="clientHeaders" className="rd-nav-item">
+                  <span>{t("requestLogs.detail.nav.clientHeaders")}</span>
+                  <span className="rd-nav-n">{count(headers?.client_request)}</span>
+                </TabsPrimitive.Trigger>
+                <TabsPrimitive.Trigger value="upstreamHeaders" className="rd-nav-item">
+                  <span>{t("requestLogs.detail.nav.upstreamHeaders")}</span>
+                  <span className="rd-nav-n">{count(headers?.upstream_request)}</span>
+                </TabsPrimitive.Trigger>
+                <TabsPrimitive.Trigger value="responseHeaders" className="rd-nav-item">
+                  <span>{t("requestLogs.detail.nav.responseHeaders")}</span>
+                  <span className="rd-nav-n">{count(headers?.upstream_response)}</span>
+                </TabsPrimitive.Trigger>
+                <div className="rd-nav-group" role="presentation" aria-hidden="true">{t("requestLogs.detail.nav.responseGroup")}</div>
+                <TabsPrimitive.Trigger value="body" className="rd-nav-item">
+                  {t("requestLogs.detail.nav.body")}
+                </TabsPrimitive.Trigger>
+              </TabsPrimitive.List>
 
-            {/* 用量 */}
-            <section className="rd-stats" aria-label={t("requestLogs.detail.section.usage")}>
-              <Stat label={t("requestLogs.detail.latency")}
-                value={request.total_latency_ms != null ? `${(request.total_latency_ms / 1000).toFixed(2)}s` : "—"} />
-              <Stat label={t("stats.daily.tokenTooltipInput")} value={fmtNum(request.input_tokens)} />
-              <Stat label={t("stats.daily.tokenTooltipOutput")} value={fmtNum(request.output_tokens)} strong />
-              <Stat label={t("stats.daily.tokenTooltipCacheRead")} value={fmtNum(request.cache_read_tokens)} />
-              <Stat label={t("stats.daily.tokenTooltipCacheCreate")} value={fmtNum(request.cache_creation_tokens)} />
-            </section>
-
-            {/* 请求 / 客户端 两栏 */}
-            <div className="rd-cols">
-              <section className="rd-card">
-                <h3 className="rd-card-title">{t("requestLogs.detail.section.request")}</h3>
-                <dl className="rd-kv">
-                  <KV k={t("requestLogs.detail.effort")} v={effortSummary(request, t) ?? dash} />
-                  <KV k={t("requestLogs.detail.stopReason")} v={monoOr(request.stop_reason)} />
-                  <KV k={t("requestLogs.detail.entryKind")} v={monoOr(request.entry_kind ? `/v1/${request.entry_kind}` : null)} />
-                  <KV k={t("requestLogs.detail.httpVersion")} v={monoOr(request.downstream_http_version)} />
-                </dl>
-              </section>
-              <section className="rd-card">
-                <h3 className="rd-card-title">{t("requestLogs.detail.section.client")}</h3>
-                <dl className="rd-kv">
-                  <KV k={t("requestLogs.detail.clientVersion")} v={monoOr(request.client_version)} />
-                  <KV k={t("requestLogs.detail.clientIp")} v={monoOr(request.client_ip)} />
-                  <KV
-                    k={t("requestLogs.detail.userAgent")}
-                    v={
-                      request.client_user_agent ? (
-                        <span className="mono" style={{ fontSize: 11.5, wordBreak: "break-all" }}>
-                          {request.client_user_agent}
+              <div className="rd-pane">
+                <TabsPrimitive.Content value="overview" className="rd-body">
+                  <table className="rd-table rd-overview-table">
+                    <thead>
+                      <tr>
+                        <th>{t("requestLogs.detail.headers.item")}</th>
+                        <th>{t("requestLogs.detail.headers.value")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <Row k={t("requestLogs.detail.clientTool")} v={<ClientToolBadge toolId={request.client_tool} userAgent={request.client_user_agent} />} />
+                      <Row k={t("requestLogs.detail.clientVersion")} v={monoOr(request.client_version)} />
+                      <Row k={t("requestLogs.detail.entryKind")} v={monoOr(request.entry_kind ? `/v1/${request.entry_kind}` : null)} />
+                      <Row k={t("requestLogs.detail.virtualModel")} v={monoOr(request.virtual_model_name)} />
+                      <Row k={t("requestLogs.detail.subscription")} v={sub?.display_name ?? providerName} />
+                      <Row k={t("requestLogs.detail.provider")} v={
+                        <span className="rd-provider-value">
+                          <ProviderLogo iconId={sub?.provider_icon ?? providerIconId(request.provider_id)} size={20} iconSize={13} />
+                          <span>{providerName}</span>
                         </span>
+                      } />
+                      <Row k={t("requestLogs.detail.realModel")} v={monoOr(request.real_model_name)} />
+                      <Row k={t("requestLogs.detail.responseModel")} v={monoOr(request.response_model_name)} />
+                      <Row k={t("requestLogs.detail.effort")} v={effortSummary(request, t) ?? dash} />
+                      <Row k={t("requestLogs.col.firstContent")} hint={t("requestLogs.firstContentHint")} v={fmtRequestSeconds(request.first_content_ms)} />
+                      <Row k={t("requestLogs.detail.latency")} v={fmtRequestSeconds(request.total_latency_ms)} />
+                      <Row k={t("stats.daily.tokenTooltipInput")} v={fmtNum(request.input_tokens)} />
+                      <Row k={t("stats.daily.tokenTooltipOutput")} v={fmtNum(request.output_tokens)} />
+                      <Row k={t("stats.daily.tokenTooltipCacheRead")} v={fmtNum(request.cache_read_tokens)} />
+                      <Row k={t("stats.daily.tokenTooltipCacheCreate")} v={fmtNum(request.cache_creation_tokens)} />
+                      {isError && request.error_message && (
+                        <Row k={t("requestLogs.detail.errorMessage")} v={<span className="rd-overview-error">{request.error_message}</span>} />
+                      )}
+                    </tbody>
+                  </table>
+                </TabsPrimitive.Content>
+
+                <TabsPrimitive.Content value="request" className="rd-body">
+                  <table className="rd-table">
+                    <thead>
+                      <tr>
+                        <th>{t("requestLogs.detail.headers.item")}</th>
+                        <th>{t("requestLogs.detail.headers.value")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <Row k={t("requestLogs.detail.effort")} v={effortSummary(request, t) ?? dash} />
+                      <Row k={t("requestLogs.detail.stopReason")} v={monoOr(request.stop_reason)} />
+                      <Row k={t("requestLogs.detail.entryKind")} v={monoOr(request.entry_kind ? `/v1/${request.entry_kind}` : null)} />
+                      <Row k={t("requestLogs.detail.httpVersion")} v={monoOr(request.downstream_http_version)} />
+                      <Row k={t("requestLogs.detail.clientVersion")} v={monoOr(request.client_version)} />
+                      <Row k={t("requestLogs.detail.clientIp")} v={monoOr(request.client_ip)} />
+                      <Row k={t("requestLogs.detail.userAgent")} v={monoOr(request.client_user_agent)} />
+                    </tbody>
+                  </table>
+                </TabsPrimitive.Content>
+
+                {toolsVisible && (() => {
+                  const { chips, truncated } = parseToolNames(request.tool_use_names);
+                  const num = (v?: number | null) => (v != null ? <span className="mono tnum">{v}</span> : dash);
+                  return (
+                    <TabsPrimitive.Content value="tools" className="rd-body">
+                      <div className="rd-tool-counts">
+                        <span>{t("requestLogs.detail.tools.offered")} {num(request.tools_offered_count)}</span>
+                        <span>{t("requestLogs.detail.tools.results")} {num(request.tool_result_count)}</span>
+                        <span>{t("requestLogs.detail.tools.used")} {num(request.tool_use_count)}</span>
+                      </div>
+                      {chips.length > 0 ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {chips.map(([name, n]) => (
+                            <span key={name} className="pill tag mono" title={name}>
+                              {name}
+                              {n > 1 && <span className="muted"> ×{n}</span>}
+                            </span>
+                          ))}
+                          {truncated && <span className="field-hint">{t("requestLogs.detail.tools.truncated")}</span>}
+                        </div>
                       ) : (
-                        dash
-                      )
-                    }
+                        request.tool_use_count === 0 && (
+                          <div className="field-hint">{t("requestLogs.detail.tools.none")}</div>
+                        )
+                      )}
+                    </TabsPrimitive.Content>
+                  );
+                })()}
+
+                <TabsPrimitive.Content value="clientHeaders" className="rd-body">
+                  <HeaderTable
+                    title={t("requestLogs.detail.nav.clientHeaders")}
+                    subtitle={t("requestLogs.detail.headers.clientSub")}
+                    pairs={headers?.client_request}
+                    loading={headersQuery.isLoading}
+                    emptyText={emptyText("client")}
                   />
-                </dl>
-              </section>
-            </div>
-
-            {hasToolInfo(request) && (() => {
-              const { chips, truncated } = parseToolNames(request.tool_use_names);
-              const num = (v?: number | null) => (v != null ? <span className="mono tnum">{v}</span> : dash);
-              return (
-                <section className="rd-card">
-                  <h3 className="rd-card-title">{t("requestLogs.detail.tools.title")}</h3>
-                  <div className="rd-tool-counts">
-                    <span>{t("requestLogs.detail.tools.offered")} {num(request.tools_offered_count)}</span>
-                    <span>{t("requestLogs.detail.tools.results")} {num(request.tool_result_count)}</span>
-                    <span>{t("requestLogs.detail.tools.used")} {num(request.tool_use_count)}</span>
-                  </div>
-                  {chips.length > 0 ? (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {chips.map(([name, count]) => (
-                        <span key={name} className="pill tag mono" title={name}>
-                          {name}
-                          {count > 1 && <span className="muted"> ×{count}</span>}
-                        </span>
-                      ))}
-                      {truncated && <span className="field-hint">{t("requestLogs.detail.tools.truncated")}</span>}
-                    </div>
-                  ) : (
-                    request.tool_use_count === 0 && (
-                      <div className="field-hint">{t("requestLogs.detail.tools.none")}</div>
-                    )
+                </TabsPrimitive.Content>
+                <TabsPrimitive.Content value="upstreamHeaders" className="rd-body">
+                  <HeaderTable
+                    title={t("requestLogs.detail.nav.upstreamHeaders")}
+                    subtitle={t("requestLogs.detail.headers.upstreamSub")}
+                    pairs={headers?.upstream_request}
+                    loading={headersQuery.isLoading}
+                    emptyText={emptyText("request")}
+                    tagFor={outboundTag}
+                  />
+                  {headers?.upstream_request && headers.upstream_request.length > 0 && (
+                    <p className="rd-note">{t("requestLogs.detail.headers.sourceHint")}</p>
                   )}
-                </section>
-              );
-            })()}
+                </TabsPrimitive.Content>
+                <TabsPrimitive.Content value="responseHeaders" className="rd-body">
+                  <HeaderTable
+                    title={t("requestLogs.detail.nav.responseHeaders")}
+                    subtitle={t("requestLogs.detail.headers.responseSub")}
+                    pairs={headers?.upstream_response}
+                    loading={headersQuery.isLoading}
+                    emptyText={emptyText("response")}
+                    tagFor={responseTag}
+                  />
+                </TabsPrimitive.Content>
 
-            {isError && request.error_message && (
-              <div className="alert err rd-error">
-                <div>
-                  <div className="rd-card-title" style={{ marginBottom: 4 }}>
-                    {t("requestLogs.detail.errorMessage")}
-                  </div>
-                  <div className="mono" style={{ fontSize: 12.5, wordBreak: "break-word" }}>
-                    {request.error_message}
-                  </div>
-                </div>
+                <TabsPrimitive.Content value="body" className="rd-body">
+                  {isError && request.error_message && (
+                    <div className="alert err rd-error">
+                      <div className="mono" style={{ fontSize: 12.5, wordBreak: "break-word" }}>
+                        {request.error_message}
+                      </div>
+                    </div>
+                  )}
+                  {prettyBody ? (
+                    <pre className="mono rd-pre">{prettyBody}</pre>
+                  ) : (
+                    <div className="rd-empty">{t("requestLogs.detail.noBody")}</div>
+                  )}
+                </TabsPrimitive.Content>
               </div>
-            )}
-
-            {prettyBody && (
-              <section>
-                <h3 className="rd-card-title">{t("requestLogs.detail.upstreamBody")}</h3>
-                <pre className="mono rd-pre">{prettyBody}</pre>
-              </section>
-            )}
-
-            {!isError && !prettyBody && (
-              <div className="field-hint">{t("requestLogs.detail.noBody")}</div>
-            )}
-          </div>
+            </TabsPrimitive.Root>
+          </>
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
-/** 路由卡「真实模型」下方的一行小字: 实际发往上游的思考强度 (没有则不显示) */
-function effortSummaryShort(r: RequestLogDto, t: (key: string) => string): string | null {
-  return r.effective_effort ? `${t("requestLogs.detail.effort")} ${r.effective_effort}` : null;
-}
-
-function Stat({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Row({ k, v, hint }: { k: string; v: React.ReactNode; hint?: string }) {
   return (
-    <div className={strong ? "rd-stat strong" : "rd-stat"}>
-      <div className="rd-stat-label">{label}</div>
-      <div className="rd-stat-value mono tnum">{value}</div>
-    </div>
-  );
-}
-
-function KV({ k, v }: { k: string; v: React.ReactNode }) {
-  return (
-    <>
-      <dt>{k}</dt>
-      <dd>{v}</dd>
-    </>
+    <tr>
+      <td className="rd-table-k" title={hint}>{k}</td>
+      <td className="rd-table-v">{v}</td>
+    </tr>
   );
 }
 

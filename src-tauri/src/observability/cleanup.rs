@@ -261,6 +261,7 @@ mod tests {
             status: RequestStatus::Success,
             http_status: Some(200),
             ttft_ms: None,
+            first_content_ms: None,
             total_latency_ms: Some(100),
             upstream_input_tokens: Some(10),
             upstream_output_tokens: Some(20),
@@ -280,6 +281,7 @@ mod tests {
             effort_source: None,
             upstream_effort: None,
             tool_calls: crate::proxy::tool_log::ToolLogFields::empty(),
+            headers: crate::proxy::header_log::HeaderLogFields::none(),
         }
     }
 

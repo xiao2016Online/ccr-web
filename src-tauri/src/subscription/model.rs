@@ -9,6 +9,7 @@ use crate::provider::model::{
     ModelDiscovery, SystemoneWire,
 };
 use crate::provider::Provider;
+use crate::subscription::header_policy::HeaderPolicy;
 use crate::subscription::quota::{QuotaPeriod, QuotaUsage, TokenQuotas};
 use crate::subscription::schedule::{effective_model, SlotSchedules, WallClock};
 use crate::virtual_model::model::SubscriptionSlot;
@@ -270,10 +271,12 @@ pub struct SubscriptionRow {
     pub auth_header_format: AuthHeaderFormat,
     pub required_headers: BTreeMap<String, String>,
     pub forward_headers: Vec<String>,
-    /// 「透传客户端请求头」开关 (migration 020, 默认 false = 历史行为)。
-    /// 打开后 Anthropic 透传路径按 proxy/forward.rs 的内置白名单转发客户端头;
-    /// 翻译类 auth_type 不消费此字段。
-    pub forward_client_headers: bool,
+    /// 客户端请求头透传策略 (migration 026, 取代 forward_client_headers)。
+    /// 只有 Anthropic 透传路径消费 (proxy/forward.rs); 翻译类 auth_type 不读。
+    pub header_policy: HeaderPolicy,
+    /// 用户自定义出站头 (migration 026)。所有订阅可编辑, yaml 重拍不覆盖;
+    /// 发送时经 `resolved_required_headers()` 合并, 同名覆盖 required_headers。
+    pub extra_headers: BTreeMap<String, String>,
     /// 创建时快照的端点协议, 之后不可变 (migration 023)。决定订阅只能绑哪类虚拟模型。
     pub endpoint_protocol: EndpointProtocol,
     /// User-supplied provider params as entered (migration 024). The resolved strings are
@@ -333,11 +336,49 @@ impl SubscriptionRow {
     }
 
     /// Headers as sent upstream: `{api_key}` in values is filled at send time, never stored.
+    /// Outbound configured headers: yaml/custom `required_headers` overlaid with the user's
+    /// `extra_headers` (same name, case-insensitive → extra wins), `{api_key}` filled. Every
+    /// send site (dispatches, ping, model discovery) goes through here, so extra headers reach
+    /// them all.
     pub fn resolved_required_headers(&self) -> BTreeMap<String, String> {
-        self.required_headers
-            .iter()
-            .map(|(k, v)| (k.clone(), crate::provider::url_template::fill_api_key(v, &self.api_key)))
+        self.resolved_required_headers_tagged()
+            .into_iter()
+            .map(|(k, v, _)| (k, v))
             .collect()
+    }
+
+    /// What the request-log classifier needs to tag the outbound headers of
+    /// a path that assembles its own map (see `header_log::classify`).
+    pub fn source_hints(&self) -> crate::proxy::header_log::SourceHints {
+        let mut custom_names: Vec<String> = self.extra_headers.keys().cloned().collect();
+        if self.is_user_defined {
+            custom_names.extend(self.required_headers.keys().cloned());
+        }
+        crate::proxy::header_log::SourceHints {
+            auth_header_name: self.auth_header_name.clone(),
+            custom_names,
+            forward_names: self.forward_headers.clone(),
+        }
+    }
+
+    /// Same headers as [`Self::resolved_required_headers`], each tagged with
+    /// who configured it: yaml `required_headers` are `Provider` (`Custom` on a
+    /// user-defined subscription, whose required headers the user wrote);
+    /// `extra_headers` are `Custom` and replace same-named entries
+    /// case-insensitively. Sorted by name like the BTreeMap projection.
+    pub fn resolved_required_headers_tagged(
+        &self,
+    ) -> Vec<(String, String, crate::proxy::header_source::HeaderSource)> {
+        use crate::proxy::header_source::HeaderSource;
+        let fill = |v: &String| crate::provider::url_template::fill_api_key(v, &self.api_key);
+        let base = if self.is_user_defined { HeaderSource::Custom } else { HeaderSource::Provider };
+        let mut out: BTreeMap<String, (String, HeaderSource)> =
+            self.required_headers.iter().map(|(k, v)| (k.clone(), (fill(v), base))).collect();
+        for (k, v) in &self.extra_headers {
+            out.retain(|existing, _| !existing.eq_ignore_ascii_case(k));
+            out.insert(k.clone(), (fill(v), HeaderSource::Custom));
+        }
+        out.into_iter().map(|(k, (v, s))| (k, v, s)).collect()
     }
 }
 
@@ -568,9 +609,12 @@ pub struct SubscriptionDto {
     pub auth_header_format: AuthHeaderFormat,
     pub required_headers: BTreeMap<String, String>,
     pub forward_headers: Vec<String>,
-    /// 「透传客户端请求头」开关. 默认 false 兼容老 DTO 消费者.
+    /// 客户端请求头透传策略.
     #[serde(default)]
-    pub forward_client_headers: bool,
+    pub header_policy: HeaderPolicy,
+    /// 用户自定义出站头.
+    #[serde(default)]
+    pub extra_headers: BTreeMap<String, String>,
     /// 端点协议 (`messages` / `systemone`)。客户端据此决定显示四槽还是 Jev 槽、能绑哪些虚拟模型。
     #[serde(default)]
     pub endpoint_protocol: EndpointProtocol,
@@ -672,7 +716,8 @@ impl SubscriptionRow {
             auth_header_format: AuthHeaderFormat::Bearer,
             required_headers: BTreeMap::new(),
             forward_headers: Vec::new(),
-            forward_client_headers: false,
+            header_policy: HeaderPolicy::none(),
+            extra_headers: BTreeMap::new(),
             endpoint_protocol: EndpointProtocol::Messages,
             url_params: BTreeMap::new(),
             systemone_wire: SystemoneWire::Standard,
@@ -746,7 +791,8 @@ impl SubscriptionDto {
             auth_header_format: rt.row.auth_header_format.clone(),
             required_headers: rt.row.required_headers.clone(),
             forward_headers: rt.row.forward_headers.clone(),
-            forward_client_headers: rt.row.forward_client_headers,
+            header_policy: rt.row.header_policy.clone(),
+            extra_headers: rt.row.extra_headers.clone(),
             endpoint_protocol: rt.row.endpoint_protocol,
             url_params: rt.row.url_params.clone(),
             model_discovery: rt.row.model_discovery.clone(),
@@ -962,6 +1008,70 @@ mod tests {
         assert_eq!(h["cf-aig-gateway-id"], "gw1");
         // the row itself still holds the template
         assert_eq!(row.required_headers["cf-aig-authorization"], "Bearer {api_key}");
+    }
+
+    #[test]
+    fn tagged_required_headers_marks_provider_and_custom() {
+        use crate::proxy::header_source::HeaderSource::{Custom, Provider};
+        let mut row = SubscriptionRow::test_fixture("p", "e");
+        row.required_headers.insert("anthropic-version".into(), "2023-06-01".into());
+        row.required_headers.insert("x-a".into(), "1".into());
+        row.extra_headers.insert("X-A".into(), "2".into());
+        row.extra_headers.insert("x-b".into(), "3".into());
+        let got = row.resolved_required_headers_tagged();
+        assert_eq!(
+            got,
+            vec![
+                ("X-A".to_string(), "2".to_string(), Custom),
+                ("anthropic-version".to_string(), "2023-06-01".to_string(), Provider),
+                ("x-b".to_string(), "3".to_string(), Custom),
+            ]
+        );
+    }
+
+    #[test]
+    fn tagged_required_headers_user_defined_is_custom() {
+        use crate::proxy::header_source::HeaderSource::Custom;
+        let mut row = SubscriptionRow::test_fixture("p", "e");
+        row.is_user_defined = true;
+        row.required_headers.insert("x-team".into(), "p".into());
+        assert_eq!(
+            row.resolved_required_headers_tagged(),
+            vec![("x-team".to_string(), "p".to_string(), Custom)]
+        );
+    }
+
+    #[test]
+    fn source_hints_user_defined_includes_required_names() {
+        let mut row = SubscriptionRow::test_fixture("p", "e");
+        row.auth_header_name = "x-api-key".into();
+        row.required_headers.insert("x-a".into(), "1".into());
+        row.extra_headers.insert("x-b".into(), "2".into());
+        row.forward_headers = vec!["x-c".into()];
+        let h = row.source_hints();
+        assert_eq!(h.auth_header_name, "x-api-key");
+        assert_eq!(h.custom_names, vec!["x-b".to_string()]);
+        assert_eq!(h.forward_names, vec!["x-c".to_string()]);
+        row.is_user_defined = true;
+        let mut names = row.source_hints().custom_names;
+        names.sort();
+        assert_eq!(names, vec!["x-a".to_string(), "x-b".to_string()]);
+    }
+
+    #[test]
+    fn extra_headers_override_required_case_insensitive() {
+        let mut row = SubscriptionRow::test_fixture("p", "e");
+        row.api_key = "k".into();
+        row.required_headers.insert("X-Team".into(), "a".into());
+        row.required_headers.insert("cf-aig-authorization".into(), "Bearer {api_key}".into());
+        row.extra_headers.insert("x-team".into(), "b".into());
+        row.extra_headers.insert("x-new".into(), "{api_key}".into());
+        let h = row.resolved_required_headers();
+        let teams: Vec<_> = h.iter().filter(|(k, _)| k.eq_ignore_ascii_case("x-team")).collect();
+        assert_eq!(teams.len(), 1, "{h:?}");
+        assert_eq!(teams[0].1, "b");
+        assert_eq!(h["x-new"], "k");
+        assert_eq!(h["cf-aig-authorization"], "Bearer k");
     }
 
     #[test]

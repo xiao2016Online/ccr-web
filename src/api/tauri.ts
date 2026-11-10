@@ -2,6 +2,10 @@ import { runtime } from "@/runtime";
 
 const invoke = runtime.invoke;
 import type {
+  RequestHeaders,
+  HeaderPreview,
+  HeaderPolicy,
+  AuthHeaderFormat,
   BreakdownBy,
   BreakdownDto,
   ChatGptAccount,
@@ -122,6 +126,24 @@ export const api = {
     invoke<void>("update_virtual_model", { name, input }),
 
   // request logs
+  getRequestHeaders: (id: string) => invoke<RequestHeaders>("get_request_headers", { id }),
+  /**
+   * 按编辑页草稿 (未保存也算) 预览发给上游的请求头; headers 是用户可编辑的那张表。
+   * auth 只对自定义订阅生效 (内置订阅的鉴权头不可编辑, 传了也被忽略)。
+   */
+  previewOutboundHeaders: (
+    subscriptionId: string,
+    headerPolicy: HeaderPolicy,
+    headers: Record<string, string>,
+    auth?: { name: string; format: AuthHeaderFormat },
+  ) =>
+    invoke<HeaderPreview>("preview_outbound_headers", {
+      subscriptionId,
+      headerPolicy,
+      headers,
+      authHeaderName: auth?.name ?? null,
+      authHeaderFormat: auth?.format ?? null,
+    }),
   listRequests: (
     page: number,
     pageSize: number,
@@ -218,9 +240,9 @@ export const api = {
   // TLS / HTTPS 证书 (proxy_mode 包含 https 时使用)
   tlsGetStatus: () => invoke<TlsStatus>("tls_get_status"),
   tlsGetCaPemPath: () => invoke<string>("tls_get_ca_pem_path"),
-  tlsExportCaPem: (dest: string) => invoke<void>("tls_export_ca_pem", { dest }),
+  tlsExportCaZip: (dest: string) => invoke<void>("tls_export_ca_zip", { dest }),
   /** 网页端导出: 返回 CA PEM 文本 */
-  tlsGetCaPemText: () => invoke<string>("tls_get_ca_pem_text"),
+  tlsGetCaZipBytes: () => invoke<number[]>("tls_get_ca_zip_bytes"),
   tlsRegenerateLeaf: () => invoke<TlsStatus>("tls_regenerate_leaf"),
 
   // Claude Code 集成 (~/.claude/settings.json)

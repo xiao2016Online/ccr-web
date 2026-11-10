@@ -26,6 +26,7 @@ pub struct RequestLogDto {
     pub status: String,
     pub http_status: Option<i64>,
     pub total_latency_ms: Option<i64>,
+    pub first_content_ms: Option<i64>,
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub cache_creation_tokens: Option<i64>,
@@ -148,7 +149,7 @@ pub async fn list_requests(
     let select_sql = format!(
         "SELECT id, timestamp, virtual_model_name, subscription_id, provider_id, endpoint_id,
                 real_model_name, response_model_name, is_streaming, status,
-                http_status, total_latency_ms,
+                http_status, total_latency_ms, first_content_ms,
                 upstream_input_tokens, upstream_output_tokens,
                 upstream_cache_creation, upstream_cache_read, error_message,
                 upstream_response_body,
@@ -186,6 +187,7 @@ pub async fn list_requests(
             status: r.try_get("status").unwrap_or_default(),
             http_status: r.try_get("http_status").ok(),
             total_latency_ms: r.try_get("total_latency_ms").ok(),
+            first_content_ms: r.try_get("first_content_ms").ok(),
             input_tokens: r.try_get("upstream_input_tokens").ok(),
             output_tokens: r.try_get("upstream_output_tokens").ok(),
             cache_creation_tokens: r.try_get("upstream_cache_creation").ok(),
@@ -222,6 +224,42 @@ fn csv_field(s: &str) -> String {
     }
 }
 
+/// 请求详情弹窗的三组请求头 (requests 表 migration 027 的三列)。不在列表接口里:
+/// 每行可达 16 KB × 3, 只在打开详情时按 id 取。列为 NULL (老日志 / 关了记录) 或无法解析 → None。
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct RequestHeadersDto {
+    pub client_request: Option<Vec<[String; 2]>>,
+    /// `[name, value, source]`, source as in `proxy::header_source::HeaderSource`.
+    pub upstream_request: Option<Vec<[String; 3]>>,
+    pub upstream_response: Option<Vec<[String; 2]>>,
+}
+
+pub(crate) async fn load_request_headers(
+    pool: &sqlx::SqlitePool,
+    id: &str,
+) -> AppResult<RequestHeadersDto> {
+    let row = sqlx::query(
+        "SELECT client_request_headers, upstream_request_headers, upstream_response_headers
+         FROM requests WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| crate::error::AppError::BadRequest("请求记录不存在".into()))?;
+    let raw = |name: &str| row.try_get::<Option<String>, _>(name).ok().flatten();
+    let col = |name: &str| raw(name).and_then(|s| crate::proxy::header_log::parse(&s));
+    Ok(RequestHeadersDto {
+        client_request: col("client_request_headers"),
+        upstream_request: raw("upstream_request_headers").and_then(|s| serde_json::from_str(&s).ok()),
+        upstream_response: col("upstream_response_headers"),
+    })
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn get_request_headers(state: State<'_, AppState>, id: String) -> AppResult<RequestHeadersDto> {
+    load_request_headers(&state.db, &id).await
+}
+
 /// CSV 列 (与 RequestLogDto 对齐, 刻意不含 upstream_response_body —— 大且多行,
 /// 排障专用不适合表格; 另在 timestamp 旁加人类可读的 timestamp_iso)。
 const CSV_HEADER: &str = "id,timestamp,timestamp_iso,virtual_model_name,subscription_id,\
@@ -229,7 +267,7 @@ provider_id,endpoint_id,real_model_name,response_model_name,is_streaming,status,
 total_latency_ms,input_tokens,output_tokens,cache_creation_tokens,cache_read_tokens,\
 error_message,client_tool,client_user_agent,client_version,client_ip,entry_kind,\
 downstream_http_version,client_effort,effective_effort,effort_source,upstream_effort,\
-stop_reason,tools_offered_count,tool_result_count,tool_use_count,tool_use_names";
+stop_reason,tools_offered_count,tool_result_count,tool_use_count,tool_use_names,first_content_ms";
 
 /// 把当前筛选下的请求逐行写成 CSV (带 UTF-8 BOM + 表头), 返回行数.
 /// 桌面导出写文件, 网页导出写 Vec<u8>, 共享同一份 SQL 与格式化.
@@ -244,7 +282,7 @@ pub async fn write_csv<W: Write>(
     let sql = format!(
         "SELECT id, timestamp, virtual_model_name, subscription_id, provider_id, endpoint_id,
                 real_model_name, response_model_name, is_streaming, status,
-                http_status, total_latency_ms,
+                http_status, total_latency_ms, first_content_ms,
                 upstream_input_tokens, upstream_output_tokens,
                 upstream_cache_creation, upstream_cache_read, error_message,
                 client_tool, client_user_agent, client_version, client_ip,
@@ -309,6 +347,7 @@ pub async fn write_csv<W: Write>(
             opt_num(r.try_get("tool_result_count").ok()),
             opt_num(r.try_get("tool_use_count").ok()),
             opt_str(r.try_get("tool_use_names").ok()),
+            opt_num(r.try_get("first_content_ms").ok()),
         ]
         .join(",");
         writeln!(w, "{}", line).map_err(io_err)?;
@@ -400,6 +439,7 @@ pub async fn get_client_activity(state: State<'_, AppState>) -> AppResult<Vec<Cl
     query_client_activity(&state.db).await.map_err(Into::into)
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::{csv_field, CSV_HEADER};
@@ -426,6 +466,68 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
+    }
+
+    async fn header_pool() -> sqlx::SqlitePool {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        crate::db::run_migrations(&pool).await.unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn first_content_migration_preserves_unknown_historical_values() {
+        let pool = header_pool().await;
+        insert_request(&pool, "old", 1000, None, Some((10, 200))).await;
+        let first: Option<i64> = sqlx::query_scalar("SELECT first_content_ms FROM requests WHERE id = 'old'")
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(first, None);
+        sqlx::query("UPDATE requests SET first_content_ms = 1200 WHERE id = 'old'")
+            .execute(&pool).await.unwrap();
+        crate::db::run_migrations(&pool).await.unwrap();
+        let first: Option<i64> = sqlx::query_scalar("SELECT first_content_ms FROM requests WHERE id = 'old'")
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(first, Some(1200));
+    }
+
+    #[tokio::test]
+    async fn detail_returns_parsed_headers() {
+        let pool = header_pool().await;
+        insert_request(&pool, "h1", 1000, Some("claude-code"), None).await;
+        sqlx::query(
+            "UPDATE requests SET client_request_headers = ?, upstream_request_headers = ?,
+             upstream_response_headers = ? WHERE id = 'h1'",
+        )
+        .bind(r#"[["x-app","cli"],["anthropic-beta","a"]]"#)
+        .bind(r#"[["x-api-key","sk-a…cdef","auth"]]"#)
+        .bind(r#"[["request-id","r1"]]"#)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let d = super::load_request_headers(&pool, "h1").await.unwrap();
+        let pair = |a: &str, b: &str| [a.to_string(), b.to_string()];
+        assert_eq!(d.client_request, Some(vec![pair("x-app", "cli"), pair("anthropic-beta", "a")]));
+        assert_eq!(
+            d.upstream_request,
+            Some(vec![["x-api-key".to_string(), "sk-a…cdef".to_string(), "auth".to_string()]])
+        );
+        assert_eq!(d.upstream_response, Some(vec![pair("request-id", "r1")]));
+    }
+
+    #[tokio::test]
+    async fn detail_returns_none_for_unrecorded_rows() {
+        let pool = header_pool().await;
+        insert_request(&pool, "h2", 1000, None, None).await;
+        sqlx::query("UPDATE requests SET upstream_request_headers = 'garbage' WHERE id = 'h2'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let d = super::load_request_headers(&pool, "h2").await.unwrap();
+        assert_eq!(d, super::RequestHeadersDto { client_request: None, upstream_request: None, upstream_response: None });
+        assert!(super::load_request_headers(&pool, "missing").await.is_err());
     }
 
     /// 聚合按 client_tool 分组: 未识别 (NULL) 是独立一桶, 整体按 last_seen 倒序。
@@ -469,9 +571,9 @@ mod tests {
     #[test]
     fn csv_header_has_expected_columns() {
         let cols: Vec<&str> = CSV_HEADER.split(',').collect();
-        assert_eq!(cols.len(), 33, "改了 CSV 列数? 同步 SELECT 与行写入");
+        assert_eq!(cols.len(), 34, "改了 CSV 列数? 同步 SELECT 与行写入");
         assert_eq!(
-            &cols[cols.len() - 9..],
+            &cols[cols.len() - 10..],
             &[
                 "client_effort",
                 "effective_effort",
@@ -482,6 +584,7 @@ mod tests {
                 "tool_result_count",
                 "tool_use_count",
                 "tool_use_names",
+                "first_content_ms",
             ]
         );
         // 刻意排除的大字段, 不能悄悄混进来

@@ -9,6 +9,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::subscription::header_policy::HeaderPolicy;
 use crate::provider::model::{
     AuthHeaderFormat, AuthType, EndpointProtocol, ModelDiscovery, SystemoneWire,
 };
@@ -244,9 +245,11 @@ pub struct SubscriptionPatch {
     /// 每槽位 reasoning effort 覆盖. 整块替换 (与 model_slots 一致, 无 per-slot patch)。
     /// 字段缺失 = auto, 即透传客户端请求携带的 effort。
     pub slot_efforts: Option<SlotEfforts>,
-    /// 「透传客户端请求头」开关。仅 Anthropic 透传路径 (auth_type=api_key) 消费;
+    /// 客户端请求头透传策略。仅 Anthropic 透传路径 (auth_type=api_key) 消费;
     /// 内置/自定义订阅均可改 (不属于 connection 信息)。
-    pub forward_client_headers: Option<bool>,
+    pub header_policy: Option<HeaderPolicy>,
+    /// 用户自定义出站头, 整块替换。内置/自定义订阅均可改, yaml 重拍不覆盖。
+    pub extra_headers: Option<BTreeMap<String, String>>,
     /// 内置订阅: 切到同 provider 的另一个 endpoint, 后端 re-snapshot base_url/messages_path。
     /// 自定义订阅传该字段会被拒绝。
     pub endpoint_id: Option<String>,
@@ -387,7 +390,8 @@ pub async fn create_subscription(
                 auth_header_format: provider.auth.header_format.clone(),
                 required_headers: snap.required_headers,
                 forward_headers: provider.forward_headers.clone(),
-                forward_client_headers: false,
+                header_policy: HeaderPolicy::default_for_provider(&provider_id),
+                extra_headers: BTreeMap::new(),
                 endpoint_protocol: snap.endpoint_protocol,
                 url_params: snap.url_params,
                 systemone_wire: snap.systemone_wire,
@@ -450,7 +454,8 @@ pub async fn create_subscription(
                 auth_header_format,
                 required_headers: BTreeMap::new(),
                 forward_headers: Vec::new(),
-                forward_client_headers: false,
+                header_policy: HeaderPolicy::none(),
+                extra_headers: BTreeMap::new(),
                 endpoint_protocol: profile.endpoint_protocol,
                 url_params: BTreeMap::new(),
                 systemone_wire: SystemoneWire::Standard,
@@ -490,6 +495,22 @@ pub async fn update_subscription(
     };
 
     // 先做所有校验/反查 (不持锁), 失败时不会留下半应用的内存修改。
+    if let Some(p) = patch.header_policy.as_ref() {
+        p.validate().map_err(AppError::BadRequest)?;
+    }
+    if let Some(extra) = patch.extra_headers.as_ref() {
+        // 鉴权头名: connection patch 改了就按新值比 (与 required_headers 校验口径一致)。
+        let (auth_name, auth_type) = {
+            let g = rt.read().await;
+            (g.row.auth_header_name.clone(), g.row.auth_type)
+        };
+        let auth_name = patch
+            .connection
+            .as_ref()
+            .and_then(|c| c.auth_header_name.clone())
+            .unwrap_or(auth_name);
+        validate_extra_headers(extra, &auth_name, auth_type)?;
+    }
     if (patch.endpoint_id.is_some() || patch.url_params.is_some()) && patch.connection.is_some() {
         return Err(AppError::BadRequest(
             "endpoint_id / url_params 与 connection patch 不能同时存在".into(),
@@ -580,8 +601,11 @@ pub async fn update_subscription(
         if let Some(efforts) = patch.slot_efforts {
             guard.row.slot_efforts = efforts;
         }
-        if let Some(v) = patch.forward_client_headers {
-            guard.row.forward_client_headers = v;
+        if let Some(v) = patch.header_policy {
+            guard.row.header_policy = v;
+        }
+        if let Some(v) = patch.extra_headers {
+            guard.row.extra_headers = v;
         }
         if let Some((eid, snap)) = resnapshot {
             guard.row.endpoint_id = eid;
@@ -1010,6 +1034,37 @@ const MAX_REQUIRED_HEADERS: usize = 20;
 /// 校验自定义订阅的额外出站 header。`auth_header_name` 须传「patch 后生效的」鉴权头名。
 /// 用 reqwest::header::{HeaderName, HeaderValue} 解析 —— 与 dispatch 层七处注入点同类型,
 /// 保证校验通过的 header 不会在出站时被静默跳过 (dispatch 对非法项是 if let Ok 静默 skip)。
+/// Headers a translation dispatch sets itself for compliance / anti-abuse; user extra headers
+/// must not override them (see CLAUDE.md「UA + originator 策略」).
+fn dispatch_owned_headers(auth_type: AuthType) -> &'static [&'static str] {
+    use crate::oauth::chatgpt::{CHATGPT_ACCOUNT_ID_HEADER, CODEX_ORIGINATOR_HEADER};
+    use crate::oauth::kiro::{KIRO_AGENT_MODE_HEADER, KIRO_AMZ_UA_HEADER, KIRO_OPTOUT_HEADER};
+    match auth_type {
+        AuthType::ChatgptOauth => &[CODEX_ORIGINATOR_HEADER, "user-agent", CHATGPT_ACCOUNT_ID_HEADER, "openai-beta"],
+        AuthType::KiroOauth => &["user-agent", KIRO_AMZ_UA_HEADER, KIRO_OPTOUT_HEADER, KIRO_AGENT_MODE_HEADER],
+        _ => &[],
+    }
+}
+
+/// 校验用户自定义出站头 (`extra_headers`, 所有订阅可编辑)。在 `validate_required_headers`
+/// 的全部规则之上, 再拒绝该接入方式固定设置的合规头。
+pub(crate) fn validate_extra_headers(
+    headers: &BTreeMap<String, String>,
+    auth_header_name: &str,
+    auth_type: AuthType,
+) -> AppResult<()> {
+    validate_required_headers(headers, auth_header_name)?;
+    let owned = dispatch_owned_headers(auth_type);
+    for k in headers.keys() {
+        if owned.iter().any(|o| o.eq_ignore_ascii_case(k)) {
+            return Err(AppError::BadRequest(format!(
+                "header \"{k}\" 由该厂商的接入方式固定设置, 不能自定义"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_required_headers(
     headers: &BTreeMap<String, String>,
     auth_header_name: &str,
@@ -1200,6 +1255,27 @@ pub async fn reset_total_quota_usage(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extra_headers_reject_compliance_headers() {
+        let h = |k: &str| hdrs(&[(k, "v")]);
+        for k in ["originator", "User-Agent", "ChatGPT-Account-Id", "OpenAI-Beta"] {
+            assert!(
+                validate_extra_headers(&h(k), "Authorization", AuthType::ChatgptOauth).is_err(),
+                "{k} must be rejected for codex"
+            );
+        }
+        for k in ["user-agent", "x-amz-user-agent", "x-amzn-codewhisperer-optout", "x-amzn-kiro-agent-mode"] {
+            assert!(
+                validate_extra_headers(&h(k), "Authorization", AuthType::KiroOauth).is_err(),
+                "{k} must be rejected for kiro"
+            );
+        }
+        assert!(validate_extra_headers(&h("user-agent"), "x-api-key", AuthType::ApiKey).is_ok());
+        assert!(validate_extra_headers(&h("X-Team"), "x-api-key", AuthType::ChatgptOauth).is_ok());
+        assert!(validate_extra_headers(&h("X-API-Key"), "x-api-key", AuthType::ApiKey).is_err());
+        assert!(validate_extra_headers(&h("host"), "x-api-key", AuthType::ApiKey).is_err());
+    }
 
     fn hdrs(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs

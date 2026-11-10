@@ -131,6 +131,7 @@ web_commands! {
     list_subscriptions() => commands::subscriptions::list_subscriptions(st).await,
     get_subscription(id: String) => commands::subscriptions::get_subscription(st, args.id).await,
     create_subscription(input: CreateSubscriptionInput) => commands::subscriptions::create_subscription(st, args.input).await,
+    preview_outbound_headers(subscription_id: String, header_policy: crate::subscription::header_policy::HeaderPolicy, headers: std::collections::BTreeMap<String, String>, auth_header_name: Option<String>, auth_header_format: Option<crate::provider::model::AuthHeaderFormat>) => commands::header_preview::preview_outbound_headers(st, args.subscription_id, args.header_policy, args.headers, args.auth_header_name, args.auth_header_format).await,
     update_subscription(id: String, patch: SubscriptionPatch) => commands::subscriptions::update_subscription(st, args.id, args.patch).await,
     update_subscription_key(id: String, new_key: String) => commands::subscriptions::update_subscription_key(st, args.id, args.new_key).await,
     delete_subscription(id: String) => commands::subscriptions::delete_subscription(st, args.id).await,
@@ -161,6 +162,7 @@ web_commands! {
     list_virtual_models() => commands::virtual_models::list_virtual_models(st).await,
     update_virtual_model(name: String, input: UpdateVirtualModelInput) => commands::virtual_models::update_virtual_model(st, args.name, args.input).await,
     // request logs
+    get_request_headers(id: String) => commands::requests::get_request_headers(st, args.id).await,
     list_requests(page: u32, page_size: u32, filters: Option<RequestLogFilters>) => commands::requests::list_requests(st, args.page, args.page_size, args.filters).await,
     export_requests_csv(path: String, filters: Option<RequestLogFilters>) => commands::requests::export_requests_csv(st, args.path, args.filters).await,
     export_requests_csv_text(filters: Option<RequestLogFilters>) => commands::requests::export_requests_csv_text(st, args.filters).await,
@@ -204,8 +206,8 @@ web_commands! {
     // TLS
     tls_get_status() => commands::tls::tls_get_status(st).await,
     tls_get_ca_pem_path() => commands::tls::tls_get_ca_pem_path(st).await,
-    tls_export_ca_pem(dest: String) => commands::tls::tls_export_ca_pem(st, args.dest).await,
-    tls_get_ca_pem_text() => commands::tls::tls_get_ca_pem_text(st).await,
+    tls_export_ca_zip() => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    tls_get_ca_zip_bytes() => commands::tls::tls_get_ca_zip_bytes(st).await,
     tls_regenerate_leaf() => commands::tls::tls_regenerate_leaf(st).await,
     // 配置导入导出。带密钥导出会把全部 API Key 写进文件, 网页界面从设计上读不到任何 Key, 所以只留桌面端。
     export_config() => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
@@ -282,7 +284,8 @@ mod tests {
     #[test]
     fn host_mutating_tui_commands_are_refusal_stubs_here() {
         let src = include_str!("api.rs");
-        for name in ["install_tui_command", "uninstall_tui_command"] {
+        // tls_export_ca_zip 同理: 写宿主机任意路径。
+        for name in ["install_tui_command", "uninstall_tui_command", "tls_export_ca_zip"] {
             assert!(REGISTERED.contains(&name), "{name} 必须登记 (两边集合要一致)");
             let line = src
                 .lines()
@@ -354,7 +357,7 @@ mod tests {
             "relaunch_app",
             "download_install_update",
             "export_requests_csv_text",
-            "tls_get_ca_pem_text",
+            "tls_get_ca_zip_bytes",
             "list_lan_addresses",
         ] {
             assert!(names.contains(&must), "{must} 未登记");

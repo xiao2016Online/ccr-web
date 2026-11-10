@@ -7,7 +7,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=flat-square&logo=tauri&logoColor=white" alt="Tauri 2">
-  <img src="https://img.shields.io/badge/Rust-1.90+-DEA584?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.90+">
+  <img src="https://img.shields.io/badge/Rust-1.94+-DEA584?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.94+">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5">
   <img src="https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
@@ -177,7 +177,8 @@ cc-router 夾在你的工具和大模型廠商中間：工具從**入口**連進
 - 這是主入口，請求原樣透傳不做協議翻譯，thinking、`output_config.effort`、`cache_control`、圖片、工具呼叫全部按 Anthropic 原生語義工作。
 - Claude Code 的完整 env 範例見上方「在 Claude Code 中使用」；Claude Desktop 需要本地 HTTPS，見[設定教學](https://ccrouter.app/docs/claude-desktop-integration/)。
 - 工作階段親和優先按 `x-claude-code-session-id` 請求頭、其次 `metadata.user_id` 識別工作階段。
-- 在訂閱編輯頁為某條訂閱開啟「透傳客戶端請求頭」後，`anthropic-beta` / `anthropic-version` 等白名單頭會原樣轉發給該上游，按訂閱單獨設定，預設關閉。
+- 每條訂閱可在編輯頁設定「請求頭透傳」：不透傳 / Claude Code 預設集 / 白名單 / 黑名單 / 全部透傳。Anthropic 官方訂閱預設用 Claude Code 預設集（`anthropic-*`、`x-claude-code-*` 等），其餘預設不透傳；憑證類請求頭任何模式都不會轉發。訂閱還可以加自訂請求頭。
+- auto mode 的伺服器端分類器只有 Anthropic 官方上游提供；Claude Code 用到的槽位裡有第三方廠商時會提示「this session isn't eligible」，可設 `CLAUDE_CODE_AUTO_MODE_SERVER=0` 關掉提示（計費不變）。
 
 </details>
 
@@ -340,6 +341,22 @@ curl http://127.0.0.1:23456/v1/systemone \
   </tr>
 </table>
 
+### 分時段虛擬模型
+
+用戶端繼續使用同一個虛擬模型，cc-router 按星期和時段自動切換各訂閱槽位對應的真實模型。在桌面 app 的訂閱編輯頁中，可以為 `fable`、`opus`、`sonnet`、`haiku` 分別設定時段規則。
+
+- **按時間安排模型** —— 為規則選擇星期、起訖時間和真實模型，右側日曆直觀呈現一週的安排；規則也可以複製到其他槽位。
+- **預設模型備援** —— 未符合時段規則時使用槽位的預設模型；如果未設定預設模型，該訂閱在未涵蓋的時間不參與這個槽位的調度。
+- **預覽調度關係** —— 在虛擬模型頁選擇星期並拖曳時間軸，檢視對應時刻的模型對應和調度關係；點擊「現在」回到目前時刻。時間以執行 cc-router 的電腦為準。
+
+**模型槽位：設定時段規則與日曆預覽**
+
+![cc-router 模型槽位的分時段規則設定與每週日曆預覽](assets/screenshots/zh/slot-schedules.png)
+
+**虛擬模型：檢視各訂閱的模型與生效時段**
+
+![cc-router 虛擬模型的分時段路由、訂閱與生效時段預覽](assets/screenshots/zh/virtual-model-schedules.png)
+
 ## 常見問題&使用場景
 
 <details>
@@ -398,7 +415,7 @@ CC 請求來了就按對應轉發，不用再頻繁改 `~/.claude/settings.json`
 - Tailwind 4
 - React 19
 
-依賴：Node.js ≥ 20（推薦 pnpm），Rust ≥ 1.90（建議直接用 rustup 最新 stable），Xcode CLT（macOS）。
+依賴：Node.js ≥ 22.22（推薦 pnpm），Rust ≥ 1.94（建議直接用 rustup 最新 stable），Xcode CLT（macOS）。
 
 ```bash
 pnpm install
@@ -430,7 +447,7 @@ Tauri 在 Windows 上打包依賴 MSVC，CI 用的也是 `x86_64-pc-windows-msvc
 
 ```powershell
 rustup show          # active toolchain 應帶 -msvc 字尾
-rustc --version      # 應 ≥ 1.90
+rustc --version      # 應 ≥ 1.94
 ```
 
 **2. 需要 Visual Studio Build Tools**
