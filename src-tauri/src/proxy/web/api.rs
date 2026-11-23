@@ -1,6 +1,6 @@
 //! POST /ui/api/cmd/{name}: 把 Tauri command 暴露成 HTTP.
 //!
-//! `#[tauri::command]` 不改变原函数, 这里拿 `AppHandle::state::<AppState>()` 造出
+//! `#[cfg_attr(feature = "desktop", tauri::command)]` 不改变原函数, 这里拿 `AppHandle::state::<AppState>()` 造出
 //! `State<'_, AppState>` 后直接调用原函数, 业务逻辑零复制.
 //! 请求体 = 前端 `invoke(name, args)` 的 args 对象 (camelCase 键); 响应 = 返回值 JSON;
 //! AppError 用现有 Serialize 实现输出 `{code, message}`, 与 Tauri 拒绝值同形.
@@ -114,7 +114,7 @@ use crate::commands::statistics::{BreakdownBy, StatsRange};
 use crate::commands::subscriptions::{
     CreateSubscriptionInput, ProbeCustomModelsInput, SubscriptionPatch,
 };
-use crate::commands::virtual_models::UpdateVirtualModelInput;
+use crate::commands::virtual_models::{CustomVirtualModelDto, CustomVirtualModelInput, UpdateVirtualModelInput};
 use crate::settings::model::SettingsPatch;
 use crate::subscription::model::KiroDisguise;
 use crate::subscription::quota::TokenQuotas;
@@ -130,9 +130,12 @@ web_commands! {
     // subscriptions
     list_subscriptions() => commands::subscriptions::list_subscriptions(st).await,
     get_subscription(id: String) => commands::subscriptions::get_subscription(st, args.id).await,
+    clone_subscription(id: String, display_name: String) => commands::subscriptions::clone_subscription(st, args.id, args.display_name).await,
     create_subscription(input: CreateSubscriptionInput) => commands::subscriptions::create_subscription(st, args.input).await,
     preview_outbound_headers(subscription_id: String, header_policy: crate::subscription::header_policy::HeaderPolicy, headers: std::collections::BTreeMap<String, String>, auth_header_name: Option<String>, auth_header_format: Option<crate::provider::model::AuthHeaderFormat>) => commands::header_preview::preview_outbound_headers(st, args.subscription_id, args.header_policy, args.headers, args.auth_header_name, args.auth_header_format).await,
     update_subscription(id: String, patch: SubscriptionPatch) => commands::subscriptions::update_subscription(st, args.id, args.patch).await,
+    preview_subscription_rebuild(id: String) => commands::subscriptions::preview_subscription_rebuild(st, args.id).await,
+    rebuild_subscription_connection(id: String) => commands::subscriptions::rebuild_subscription_connection(st, args.id).await,
     update_subscription_key(id: String, new_key: String) => commands::subscriptions::update_subscription_key(st, args.id, args.new_key).await,
     delete_subscription(id: String) => commands::subscriptions::delete_subscription(st, args.id).await,
     set_subscription_enabled(id: String, enabled: bool) => commands::subscriptions::set_subscription_enabled(st, args.id, args.enabled).await,
@@ -145,6 +148,9 @@ web_commands! {
     get_host_clock() => commands::subscriptions::get_host_clock().await,
     reset_total_quota_usage(id: String) => commands::subscriptions::reset_total_quota_usage(st, args.id).await,
     // ChatGPT OAuth
+    start_chatgpt_browser_flow() => commands::oauth::start_chatgpt_browser_flow(st).await,
+    poll_chatgpt_browser_flow(flow_id: String) => commands::oauth::poll_chatgpt_browser_flow(st, args.flow_id).await,
+    cancel_chatgpt_browser_flow(flow_id: Option<String>) => commands::oauth::cancel_chatgpt_browser_flow(st, args.flow_id).await,
     start_chatgpt_device_flow() => commands::oauth::start_chatgpt_device_flow(st).await,
     poll_chatgpt_device_code(device_code: String) => commands::oauth::poll_chatgpt_device_code(st, args.device_code).await,
     create_chatgpt_oauth_subscription(input: CreateChatGptOAuthSubscriptionInput) => commands::oauth::create_chatgpt_oauth_subscription(st, args.input).await,
@@ -159,22 +165,34 @@ web_commands! {
     forget_kiro_oauth_cache(subscription_id: String) => commands::oauth::forget_kiro_oauth_cache(st, args.subscription_id).await,
     update_kiro_disguise_fields(subscription_id: String, disguise: KiroDisguise) => commands::oauth::update_kiro_disguise_fields(st, args.subscription_id, args.disguise).await,
     // virtual models
+    list_custom_virtual_models() => commands::virtual_models::list_custom_virtual_models(st).await,
+    create_custom_virtual_model(model: CustomVirtualModelDto) => commands::virtual_models::create_custom_virtual_model(st, args.model).await,
+    update_custom_virtual_model(name: String, input: CustomVirtualModelInput) => commands::virtual_models::update_custom_virtual_model(st, args.name, args.input).await,
+    delete_custom_virtual_model(name: String) => commands::virtual_models::delete_custom_virtual_model(st, args.name).await,
     list_virtual_models() => commands::virtual_models::list_virtual_models(st).await,
     update_virtual_model(name: String, input: UpdateVirtualModelInput) => commands::virtual_models::update_virtual_model(st, args.name, args.input).await,
     // request logs
     get_request_headers(id: String) => commands::requests::get_request_headers(st, args.id).await,
+    get_request_detail(id: String) => commands::requests::get_request_detail(st, args.id).await,
+    list_session_requests(session_id: String, around_ms: i64, radius: Option<u32>) => commands::requests::list_session_requests(st, args.session_id, args.around_ms, args.radius).await,
+    get_request_facets(filters: Option<RequestLogFilters>) => commands::requests::get_request_facets(st, args.filters).await,
+    get_request_neighbors(id: String, filters: Option<RequestLogFilters>) => commands::requests::get_request_neighbors(st, args.id, args.filters).await,
     list_requests(page: u32, page_size: u32, filters: Option<RequestLogFilters>) => commands::requests::list_requests(st, args.page, args.page_size, args.filters).await,
     export_requests_csv(path: String, filters: Option<RequestLogFilters>) => commands::requests::export_requests_csv(st, args.path, args.filters).await,
     export_requests_csv_text(filters: Option<RequestLogFilters>) => commands::requests::export_requests_csv_text(st, args.filters).await,
     list_supported_client_tools() => commands::requests::list_supported_client_tools().await,
     get_client_activity() => commands::requests::get_client_activity(st).await,
+    get_live_requests(since_ms: Option<i64>) => crate::observability::live_feed::get_live_requests(app, st, args.since_ms).await,
     // statistics / receipts / events
     get_overall_stats(range: StatsRange) => commands::statistics::get_overall_stats(st, args.range).await,
+    get_cost_summary(range: StatsRange) => commands::statistics::get_cost_summary(st, args.range).await,
     get_daily_series(range: StatsRange) => commands::statistics::get_daily_series(st, args.range).await,
     get_breakdown(range: StatsRange, by: BreakdownBy) => commands::statistics::get_breakdown(st, args.range, args.by).await,
     get_token_heatmap(days: u32) => commands::statistics::get_token_heatmap(st, args.days).await,
     get_tool_breakdown(range: StatsRange, limit: u32) => commands::statistics::get_tool_breakdown(st, args.range, args.limit).await,
     get_token_rates(range: StatsRange) => commands::statistics::get_token_rates(st, args.range).await,
+    get_subscription_activity() => commands::statistics::get_subscription_activity(st).await,
+    get_request_mix(range: StatsRange) => commands::statistics::get_request_mix(st, args.range).await,
     get_receipt_summary(range: ReceiptRange) => commands::receipts::get_receipt_summary(st, args.range).await,
     list_events(page: u32, page_size: u32, filters: Option<EventFilters>) => commands::events::list_events(st, args.page, args.page_size, args.filters).await,
     // settings / proxy
@@ -189,6 +207,24 @@ web_commands! {
     // release notes
     get_release_notes() => commands::release_notes::get_release_notes(st).await,
     mark_release_notes_seen() => commands::release_notes::mark_release_notes_seen(st).await,
+    // plugins: 读已安装的两边都开放; 下载 / 安装 / 卸载会改宿主机文件, 只能在桌面窗口
+    list_plugins() => commands::plugins::list_plugins(st).await,
+    load_plugin(id: String) => commands::plugins::load_plugin(st, args.id).await,
+    stage_plugin_from_github(link: String) => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    stage_plugin_from_dir(path: String) => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    install_staged_plugin(staging_id: String, community_sha256: Option<String>) => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    discard_staged_plugin(staging_id: String) => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    uninstall_plugin(id: String) => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    // 启用会改变 app 行为 (厂商出现在列表里 / 以后的规则改请求), 只在桌面; 停用是安全方向, 两边都开放
+    enable_plugin(id: String) => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    disable_plugin(id: String) => commands::plugins::disable_plugin(st, args.id).await,
+    set_plugin_params(id: String, params: serde_json::Map<String, Value>) => commands::plugins::set_plugin_params(st, args.id, args.params).await,
+    test_notifier_plugin(id: String) => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    list_notifier_deliveries(id: String) => commands::plugins::list_notifier_deliveries(st, args.id).await,
+    test_desktop_notification() => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    reorder_plugins(plugin_type: String, ordered_ids: Vec<String>) => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    dry_run_rules_plugin(id: String, params: Option<serde_json::Map<String, Value>>, limit: Option<u32>) => commands::plugins::dry_run_rules_plugin(st, args.id, args.params, args.limit).await,
+    fetch_community_index() => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
     // onboarding
     get_onboarding_state() => commands::onboarding::get_onboarding_state(st).await,
     complete_onboarding() => commands::onboarding::complete_onboarding(st).await,
@@ -221,6 +257,10 @@ web_commands! {
     install_tui_command() => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
     uninstall_tui_command() => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
     // 托盘只属于桌面 app; 前端也只在桌面运行时才调它
+    get_live_sessions() => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    session_monitor_status() => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    session_monitor_client_version(client: crate::session_monitor::Client) => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
+    configure_session_monitor(client: crate::session_monitor::Client, action: crate::session_monitor::MonitorAction) => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
     set_tray_update() => Err::<(), AppError>(AppError::BadRequest(DESKTOP_ONLY.into())),
     // Claude Code integration
     read_claude_code_settings() => commands::integrations::read_claude_code_settings(st).await,
@@ -293,6 +333,32 @@ mod tests {
                 .unwrap_or_else(|| panic!("找不到 {name} 的登记行"));
             assert!(line.contains("DESKTOP_ONLY") && line.contains("Err::<"), "{name} 不是拒绝桩: {line}");
             assert!(!line.contains("commands::tui::"), "{name} 调到了真实实现: {line}");
+        }
+    }
+
+    /// 插件的下载 / 安装 / 卸载会改宿主机文件 (app_data_dir/plugins), 网页 / TUI 通道必须是拒绝桩。
+    #[test]
+    fn host_mutating_plugin_commands_are_refusal_stubs_here() {
+        let src = include_str!("api.rs");
+        for name in [
+            "stage_plugin_from_github",
+            "stage_plugin_from_dir",
+            "install_staged_plugin",
+            "discard_staged_plugin",
+            "uninstall_plugin",
+            "fetch_community_index",
+            "enable_plugin",
+            "test_notifier_plugin",
+            "test_desktop_notification",
+            "reorder_plugins",
+        ] {
+            assert!(REGISTERED.contains(&name), "{name} 必须登记 (两边集合要一致)");
+            let line = src
+                .lines()
+                .find(|l| l.trim_start().starts_with(&format!("{name}(")))
+                .unwrap_or_else(|| panic!("找不到 {name} 的登记行"));
+            assert!(line.contains("DESKTOP_ONLY") && line.contains("Err::<"), "{name} 不是拒绝桩: {line}");
+            assert!(!line.contains("commands::plugins::"), "{name} 调到了真实实现: {line}");
         }
     }
 

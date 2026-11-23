@@ -1,18 +1,30 @@
+import type { CustomVirtualModelDto, CustomVirtualModelInput } from "@/types";
 import { runtime } from "@/runtime";
 
 const invoke = runtime.invoke;
 import type {
+  InstalledPlugin,
+  RebuildPreview,
+  CostSummaryDto,
+  PluginContent,
+  StagedPlugin,
   RequestHeaders,
   HeaderPreview,
   HeaderPolicy,
   AuthHeaderFormat,
   BreakdownBy,
   BreakdownDto,
+  BrowserFlowStart,
   ChatGptAccount,
   ClaudeCodeInspectResult,
   ClaudeCodeReadResult,
   ClaudeCodeWriteOutcome,
   ClientActivityDto,
+  LiveRequest,
+  RequestDetailDto,
+  RequestFacetsDto,
+  RequestNeighborsDto,
+  RequestSummary,
   CreateChatGptOAuthSubscriptionInput,
   CreateKiroSubscriptionInput,
   CreateSubscriptionInput,
@@ -60,6 +72,8 @@ import type {
   UpdateVirtualModelInput,
   VirtualModelDto,
   VirtualModelName,
+  RequestMixDto,
+  SubscriptionActivityDto,
 } from "@/types";
 
 export const api = {
@@ -70,10 +84,15 @@ export const api = {
   listSubscriptions: () => invoke<SubscriptionDto[]>("list_subscriptions"),
   getSubscription: (id: string) =>
     invoke<SubscriptionDto>("get_subscription", { id }),
+  cloneSubscription: (id: string, displayName: string) =>
+    invoke<SubscriptionDto>("clone_subscription", { id, displayName }),
   createSubscription: (input: CreateSubscriptionInput) =>
     invoke<SubscriptionDto>("create_subscription", { input }),
   updateSubscription: (id: string, patch: SubscriptionPatch) =>
     invoke<SubscriptionDto>("update_subscription", { id, patch }),
+  /** 厂商描述 (内置 yaml / 厂商插件) 更新后: 预览 / 执行「按新描述重建连接」 */
+  previewSubscriptionRebuild: (id: string) => invoke<RebuildPreview>("preview_subscription_rebuild", { id }),
+  rebuildSubscriptionConnection: (id: string) => invoke<SubscriptionDto>("rebuild_subscription_connection", { id }),
   updateSubscriptionKey: (id: string, newKey: string) =>
     invoke<void>("update_subscription_key", { id, newKey }),
   deleteSubscription: (id: string) =>
@@ -95,6 +114,12 @@ export const api = {
   getHostClock: () => invoke<HostClockDto>("get_host_clock"),
 
   // ChatGPT OAuth (Phase 1, OpenAI Codex provider)
+  startChatGptBrowserFlow: () =>
+    invoke<BrowserFlowStart>("start_chatgpt_browser_flow"),
+  pollChatGptBrowserFlow: (flowId: string) =>
+    invoke<ChatGptAccount | null>("poll_chatgpt_browser_flow", { flowId }),
+  cancelChatGptBrowserFlow: (flowId?: string) =>
+    invoke<void>("cancel_chatgpt_browser_flow", { flowId: flowId ?? null }),
   startChatGptDeviceFlow: () =>
     invoke<DeviceFlowStart>("start_chatgpt_device_flow"),
   pollChatGptDeviceCode: (deviceCode: string) =>
@@ -121,6 +146,13 @@ export const api = {
     invoke<void>("update_kiro_disguise_fields", { subscriptionId, disguise }),
 
   // virtual models
+  listCustomVirtualModels: () => invoke<CustomVirtualModelDto[]>("list_custom_virtual_models"),
+  createCustomVirtualModel: (model: CustomVirtualModelDto) =>
+    invoke<void>("create_custom_virtual_model", { model }),
+  updateCustomVirtualModel: (name: string, input: CustomVirtualModelInput) =>
+    invoke<void>("update_custom_virtual_model", { name, input }),
+  deleteCustomVirtualModel: (name: string) =>
+    invoke<void>("delete_custom_virtual_model", { name }),
   listVirtualModels: () => invoke<VirtualModelDto[]>("list_virtual_models"),
   updateVirtualModel: (name: VirtualModelName, input: UpdateVirtualModelInput) =>
     invoke<void>("update_virtual_model", { name, input }),
@@ -158,6 +190,14 @@ export const api = {
     invoke<string>("export_requests_csv_text", { filters }),
   /** Live Routing「客户端接入」: 按 client_tool 聚合的最近活动 (被动流量检测) */
   getClientActivity: () => invoke<ClientActivityDto[]>("get_client_activity"),
+  getLiveRequests: (sinceMs?: number) => invoke<LiveRequest[]>("get_live_requests", { sinceMs }),
+  /** 详情页; 还没写进库时为 null (批量写入, 最多 5 秒) */
+  getRequestDetail: (id: string) => invoke<RequestDetailDto | null>("get_request_detail", { id }),
+  listSessionRequests: (sessionId: string, aroundMs: number, radius?: number) =>
+    invoke<RequestSummary[]>("list_session_requests", { sessionId, aroundMs, radius }),
+  getRequestFacets: (filters?: RequestLogFilters) => invoke<RequestFacetsDto>("get_request_facets", { filters }),
+  getRequestNeighbors: (id: string, filters?: RequestLogFilters) =>
+    invoke<RequestNeighborsDto>("get_request_neighbors", { id, filters }),
 
   // config backup / import
   exportConfig: (path: string, password?: string) =>
@@ -174,6 +214,8 @@ export const api = {
   // statistics (聚合表查询, 跨范围全局)
   getOverallStats: (range: StatsRange) =>
     invoke<OverallStatsDto>("get_overall_stats", { range }),
+  /** 统计页费用卡片: 按当前价格表现算 (没有计价插件时 has_pricing = false) */
+  getCostSummary: (range: StatsRange) => invoke<CostSummaryDto>("get_cost_summary", { range }),
   getDailySeries: (range: StatsRange) =>
     invoke<DailySeriesPointDto[]>("get_daily_series", { range }),
   getBreakdown: (range: StatsRange, by: BreakdownBy) =>
@@ -185,6 +227,10 @@ export const api = {
   /** 按订阅的解码速率 (tokens/s), 仅统计流式成功请求 */
   getTokenRates: (range: StatsRange) =>
     invoke<TokenRateDto[]>("get_token_rates", { range }),
+  getSubscriptionActivity: () =>
+    invoke<SubscriptionActivityDto[]>("get_subscription_activity"),
+  getRequestMix: (range: StatsRange) =>
+    invoke<RequestMixDto>("get_request_mix", { range }),
 
   getReceiptSummary: (range: ReceiptRange) =>
     invoke<ReceiptDto>("get_receipt_summary", { range }),
@@ -218,6 +264,38 @@ export const api = {
   /** 仅桌面端可用; 网页端后端直接拒绝 */
   installTuiCommand: () => invoke<TuiInstallOutcome>("install_tui_command"),
   uninstallTuiCommand: () => invoke<TuiInstallOutcome>("uninstall_tui_command"),
+
+  // plugins (下载 / 安装 / 卸载仅桌面端; 网页端后端直接拒绝)
+  listPlugins: () => invoke<InstalledPlugin[]>("list_plugins"),
+  loadPlugin: (id: string) => invoke<PluginContent>("load_plugin", { id }),
+  stagePluginFromGithub: (link: string) => invoke<StagedPlugin>("stage_plugin_from_github", { link }),
+  stagePluginFromDir: (path: string) => invoke<StagedPlugin>("stage_plugin_from_dir", { path }),
+  installStagedPlugin: (stagingId: string, communitySha256?: string) =>
+    invoke<InstalledPlugin>("install_staged_plugin", { stagingId, communitySha256: communitySha256 ?? null }),
+  discardStagedPlugin: (stagingId: string) => invoke<void>("discard_staged_plugin", { stagingId }),
+  uninstallPlugin: (id: string) => invoke<void>("uninstall_plugin", { id }),
+  /** 启用系统插件: 仅桌面端 (网页端拒绝); 停用两边都能用 */
+  enablePlugin: (id: string) => invoke<void>("enable_plugin", { id }),
+  disablePlugin: (id: string) => invoke<void>("disable_plugin", { id }),
+  /** 保存系统插件用户参数 (网页端也开放: 改参数本身不启用插件) */
+  setPluginParams: (id: string, params: Record<string, unknown>) => invoke<void>("set_plugin_params", { id, params }),
+  /** 通知插件测试推送 (仅桌面端; 网页端拒绝) */
+  testNotifierPlugin: (id: string) => invoke<import("@/types").NotifierDeliveryRecord>("test_notifier_plugin", { id }),
+  /** 查询通知插件最近发送记录 (内存最近 20 条, 不含请求体) */
+  listNotifierDeliveries: (id: string) => invoke<import("@/types").NotifierDeliveryRecord[]>("list_notifier_deliveries", { id }),
+  /** 发送系统桌面测试通知 (仅桌面端; 网页端拒绝) */
+  testDesktopNotification: () => invoke<void>("test_desktop_notification"),
+  /** 调整计价 / 规则插件的优先级顺序 (仅桌面端; 网页端拒绝) */
+  reorderPlugins: (pluginType: "pricing" | "rules", orderedIds: string[]) =>
+    invoke<void>("reorder_plugins", { pluginType, orderedIds }),
+  /** 规则插件试运行 (抽最近 N 条请求日志模拟匹配, 纯只读) */
+  dryRunRulesPlugin: (id: string, params?: Record<string, unknown>, limit?: number) =>
+    invoke<import("@/types").RulesDryRunResult>("dry_run_rules_plugin", {
+      id,
+      params: params ?? null,
+      limit: limit ?? null,
+    }),
+  fetchCommunityIndex: () => invoke<unknown>("fetch_community_index"),
 
   // onboarding
   getOnboardingState: () => invoke<OnboardingState>("get_onboarding_state"),

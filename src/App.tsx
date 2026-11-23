@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router";
+import { AgentMonitorPage } from "@/routes/AgentMonitor";
 import { AppShell } from "@/components/layout/AppShell";
 import { OverviewPage } from "@/routes/Overview";
 import { VirtualModelsPage } from "@/routes/VirtualModels";
@@ -9,8 +10,10 @@ import { SubscriptionNewPage } from "@/routes/SubscriptionNew";
 import { SubscriptionEditPage } from "@/routes/SubscriptionEdit";
 import { SettingsPage } from "@/routes/Settings";
 import { LogsPage } from "@/routes/Logs";
+import { RequestDetailPage } from "@/routes/RequestDetail";
 import { StatisticsPage } from "@/routes/Statistics";
 import { ReceiptsPage } from "@/routes/Receipts";
+import { PluginsPage } from "@/routes/Plugins";
 import { AboutPage } from "@/routes/About";
 import { GuidePage } from "@/routes/Guide";
 import { useSubscriptionEventBridge } from "@/hooks/useSubscriptions";
@@ -43,13 +46,16 @@ function AppInner() {
         <Route index element={<OverviewPage />} />
         <Route path="/overview" element={<OverviewPage />} />
         <Route path="/live-routing" element={<LiveRoutingPage />} />
+        <Route path="/agent-monitor" element={<AgentMonitorPage />} />
         <Route path="/virtual-models" element={<VirtualModelsPage />} />
         <Route path="/subscriptions" element={<SubscriptionsPage />} />
         <Route path="/subscriptions/new" element={<SubscriptionNewPage />} />
         <Route path="/subscriptions/:id" element={<SubscriptionEditPage />} />
         <Route path="/request-logs" element={<LogsPage />} />
+        <Route path="/request-logs/:id" element={<RequestDetailPage />} />
         <Route path="/statistics" element={<StatisticsPage />} />
         <Route path="/receipts" element={<ReceiptsPage />} />
+        <Route path="/plugins" element={<PluginsPage />} />
         <Route path="/guide" element={<GuidePage />} />
         <Route path="/updates" element={<UpdatesPage />} />
         <Route path="/settings" element={<SettingsPage />} />

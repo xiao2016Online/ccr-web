@@ -13,6 +13,16 @@ export function useOverallStats(range: StatsRange) {
   });
 }
 
+/** 费用卡片: 按当前价格表现算; 计价插件装 / 卸 / 启停经 plugins_changed 让 STATS_KEY 失效 */
+export function useCostSummary(range: StatsRange) {
+  return useQuery({
+    queryKey: [STATS_KEY, "cost", range],
+    queryFn: () => api.getCostSummary(range),
+    placeholderData: keepPreviousData,
+    staleTime: 5_000,
+  });
+}
+
 export function useDailySeries(range: StatsRange) {
   return useQuery({
     queryKey: [STATS_KEY, "daily", range],
@@ -56,5 +66,24 @@ export function useToolBreakdown(range: StatsRange, limit = 10) {
     queryFn: () => api.getToolBreakdown(range, limit),
     placeholderData: keepPreviousData,
     staleTime: 5_000,
+  });
+}
+
+export function useRequestMix(range: StatsRange) {
+  return useQuery({
+    queryKey: [STATS_KEY, "mix", range],
+    queryFn: () => api.getRequestMix(range),
+    placeholderData: keepPreviousData,
+    staleTime: 5_000,
+  });
+}
+
+/** 订阅列表的「近 24 小时」小柱图; 与订阅列表同节奏轮询 */
+export function useSubscriptionActivity() {
+  return useQuery({
+    queryKey: [STATS_KEY, "subscription-activity"],
+    queryFn: () => api.getSubscriptionActivity(),
+    refetchInterval: 30_000,
+    staleTime: 10_000,
   });
 }

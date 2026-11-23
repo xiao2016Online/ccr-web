@@ -14,7 +14,7 @@ use crate::provider::model::{
     AuthHeaderFormat, AuthType, BalanceDiscovery, EndpointProtocol, ModelDiscovery, SystemoneWire,
 };
 use crate::subscription::model::{
-    BalanceSnapshot, ModelCache, ModelInfo, ModelSlots, OAuthMetadata, SlotEfforts,
+    BalanceSnapshot, Billing, ModelCache, ModelInfo, ModelSlots, OAuthMetadata, SlotEfforts,
     SubscriptionRow, SubscriptionRuntime,
 };
 use crate::subscription::quota::{QuotaBucket, QuotaPeriod, QuotaUsage, TokenQuotas, ALL_PERIODS};
@@ -40,7 +40,7 @@ pub async fn load_runtime(
                 model_discovery, balance_discovery,
                 provider_display_name, provider_icon, is_user_defined,
                 auth_type, oauth_metadata, slot_efforts, token_quotas, endpoint_protocol,
-                url_params, systemone_wire, slot_schedules
+                url_params, systemone_wire, slot_schedules, billing
          FROM subscriptions",
     )
     .fetch_all(pool)
@@ -176,8 +176,11 @@ fn row_to_row(row: &sqlx::sqlite::SqliteRow) -> AppResult<SubscriptionRow> {
             SlotSchedules::default()
         }
     };
+    // billing 列在 migration 033 加, DEFAULT 'metered'; 不认识的值按按量处理 (只影响费用的显示口径)
+    let billing = Billing::from_db(&row.try_get::<String, _>("billing")?);
     Ok(SubscriptionRow {
         id,
+        billing,
         provider_id: row.try_get("provider_id")?,
         endpoint_id: row.try_get("endpoint_id")?,
         display_name: row.try_get("display_name")?,
@@ -266,13 +269,13 @@ pub async fn insert_on(conn: &mut SqliteConnection, sub: &SubscriptionRow) -> Ap
             model_discovery, balance_discovery,
             provider_display_name, provider_icon, is_user_defined,
             auth_type, oauth_metadata, slot_efforts, token_quotas, endpoint_protocol,
-            url_params, systemone_wire, slot_schedules)
+            url_params, systemone_wire, slot_schedules, billing)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                  ?, ?, ?, ?,
                  ?, ?, ?, ?, ?, ?,
                  ?, ?, ?,
                  ?, ?, ?, ?, ?,
-                 ?, ?, ?)",
+                 ?, ?, ?, ?)",
     )
     .bind(sub.id.to_string())
     .bind(&sub.provider_id)
@@ -311,9 +314,28 @@ pub async fn insert_on(conn: &mut SqliteConnection, sub: &SubscriptionRow) -> Ap
     .bind(url_params_json)
     .bind(sub.systemone_wire.as_str())
     .bind(slot_schedules_json)
+    .bind(sub.billing.as_str())
     .execute(&mut *conn)
     .await?;
     Ok(())
+}
+
+/// 读取单条订阅当前持久化的 OAuth 元数据 (用于 refresh_token 轮换时保留既有 account_id / email).
+pub async fn get_oauth_metadata(pool: &SqlitePool, id: &Uuid) -> AppResult<Option<OAuthMetadata>> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT oauth_metadata FROM subscriptions WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(pool)
+            .await?;
+    let Some((json_str,)) = row else {
+        return Ok(None);
+    };
+    if json_str.trim().is_empty() {
+        return Ok(None);
+    }
+    let meta: OAuthMetadata = serde_json::from_str(&json_str)
+        .map_err(|e| AppError::internal(format!("oauth_metadata JSON 解析失败: {e}")))?;
+    Ok(Some(meta))
 }
 
 /// 更新订阅的 OAuth 元数据 (例如 refresh_token 被服务端旋转后落盘新值).
@@ -371,7 +393,7 @@ pub async fn update_row(pool: &SqlitePool, sub: &SubscriptionRow) -> AppResult<(
             model_discovery = ?, balance_discovery = ?,
             provider_display_name = ?, provider_icon = ?, is_user_defined = ?,
             url_params = ?, systemone_wire = ?,
-            slot_schedules = ?
+            slot_schedules = ?, billing = ?
          WHERE id = ?",
     )
     .bind(&sub.endpoint_id)
@@ -404,6 +426,7 @@ pub async fn update_row(pool: &SqlitePool, sub: &SubscriptionRow) -> AppResult<(
     .bind(url_params_json)
     .bind(sub.systemone_wire.as_str())
     .bind(slot_schedules_json)
+    .bind(sub.billing.as_str())
     .bind(sub.id.to_string())
     .execute(pool)
     .await?;

@@ -6,6 +6,7 @@ pub mod model;
 pub mod model_discovery;
 pub mod ping;
 pub mod quota;
+pub mod rebuild;
 pub mod recheck_worker;
 pub mod schedule;
 pub mod snapshot;

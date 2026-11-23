@@ -68,18 +68,24 @@ pub async fn messages(
     // 沿 dispatch 链透传给所有 RequestLogEntry.
     // 「记录请求头」开关每请求读一次, 入站头在这里脱敏序列化 (proxy/header_log.rs)。
     let log_headers = state.settings.read().await.log_request_headers;
+    let info = client_fingerprint::identify(&headers);
+    let client_tool = info.tool;
     let ctx = ClientContext {
-        info: client_fingerprint::identify(&headers),
+        trace_id: Some(uuid::Uuid::new_v4().to_string()),
+        info,
         ip: Some(peer.ip().to_string()),
         entry_kind: RequestEntryKind::Messages,
         http_version: Some(format_http_version(version)),
         session_key: session_key::extract(&headers, &parsed, RequestEntryKind::Messages),
-        tools: tool_log::request_tool_shape(&parsed),
+        monitor_identity: None,
+        net_timing: None,
+        tools: tool_log::request_tool_shape(&parsed).with_purpose(&parsed, client_tool),
         request_headers_log: crate::proxy::header_log::serialize(&headers, log_headers),
         log_headers,
         upstream_request_headers_log: None,
         upstream_response_headers_log: None,
-    };
+        plugins_applied: None,
+    }.with_monitor_identity(&headers, &parsed);
 
     info!(
         %model,
@@ -193,19 +199,25 @@ pub async fn responses(
 
     // 「记录请求头」开关每请求读一次, 入站头在这里脱敏序列化 (proxy/header_log.rs)。
     let log_headers = state.settings.read().await.log_request_headers;
+    let info = client_fingerprint::identify(&headers);
+    let client_tool = info.tool;
     let ctx = ClientContext {
-        info: client_fingerprint::identify(&headers),
+        trace_id: Some(uuid::Uuid::new_v4().to_string()),
+        info,
         ip: Some(peer.ip().to_string()),
         entry_kind: RequestEntryKind::Responses,
         http_version: Some(format_http_version(version)),
         // 用翻译前的原始 parsed: request_to_anthropic 会丢 prompt_cache_key.
         session_key: session_key::extract(&headers, &parsed, RequestEntryKind::Responses),
-        tools: tool_log::request_tool_shape(&anthropic_body),
+        monitor_identity: None,
+        net_timing: None,
+        tools: tool_log::request_tool_shape(&anthropic_body).with_purpose(&anthropic_body, client_tool),
         request_headers_log: crate::proxy::header_log::serialize(&headers, log_headers),
         log_headers,
         upstream_request_headers_log: None,
         upstream_response_headers_log: None,
-    };
+        plugins_applied: None,
+    }.with_monitor_identity(&headers, &parsed);
 
     info!(
         %model,
@@ -545,18 +557,24 @@ pub async fn chat_completions(
 
     // 「记录请求头」开关每请求读一次, 入站头在这里脱敏序列化 (proxy/header_log.rs)。
     let log_headers = state.settings.read().await.log_request_headers;
+    let info = client_fingerprint::identify(&headers);
+    let client_tool = info.tool;
     let ctx = ClientContext {
-        info: client_fingerprint::identify(&headers),
+        trace_id: Some(uuid::Uuid::new_v4().to_string()),
+        info,
         ip: Some(peer.ip().to_string()),
         entry_kind: RequestEntryKind::ChatCompletions,
         http_version: Some(format_http_version(version)),
         // 用翻译前的原始 parsed: 会话键分支读原始 `user` 字段.
         session_key: session_key::extract(&headers, &parsed, RequestEntryKind::ChatCompletions),
-        tools: tool_log::request_tool_shape(&anthropic_body),
+        monitor_identity: None,
+        net_timing: None,
+        tools: tool_log::request_tool_shape(&anthropic_body).with_purpose(&anthropic_body, client_tool),
         request_headers_log: crate::proxy::header_log::serialize(&headers, log_headers),
         log_headers,
         upstream_request_headers_log: None,
         upstream_response_headers_log: None,
+        plugins_applied: None,
     };
 
     info!(
@@ -817,16 +835,20 @@ pub async fn systemone(
     // 「记录请求头」开关每请求读一次, 入站头在这里脱敏序列化 (proxy/header_log.rs)。
     let log_headers = state.settings.read().await.log_request_headers;
     let ctx = ClientContext {
+        trace_id: Some(uuid::Uuid::new_v4().to_string()),
         info: client_fingerprint::identify(&headers),
         ip: Some(peer.ip().to_string()),
         entry_kind: RequestEntryKind::SystemOne,
         http_version: Some(format_http_version(version)),
         session_key: session_key::extract(&headers, &parsed, RequestEntryKind::SystemOne),
+        monitor_identity: None,
+        net_timing: None,
         tools: Default::default(),
         request_headers_log: crate::proxy::header_log::serialize(&headers, log_headers),
         log_headers,
         upstream_request_headers_log: None,
         upstream_response_headers_log: None,
+        plugins_applied: None,
     };
     info!(%model, client_tool = ?ctx.info.tool, client_ip = ?ctx.ip, "proxy received /v1/systemone request");
     systemone::dispatch(&state, body, model, &ctx).await
@@ -874,17 +896,32 @@ const MODEL_IDS: &[&str] = &[
 ];
 
 /// GET /v1/models
-/// 返回 cc-router 对外暴露的固定模型清单, 无鉴权 (与 /health 同级在 auth_layer 直通).
+/// 内置模型始终可见。代理鉴权开启时，自定义模型只对通过鉴权的客户端可见。
 ///
 /// schema 是 **Anthropic /v1/models + OpenAI /v1/models 超集**: 同时填两边的字段
 /// (`type`+`object`, `display_name`+`owned_by`, `created_at`+`created`),
 /// 两边 SDK 都按 `extra: allow` 忽略未知字段, 共用同一路径对客户端透明。
-pub async fn models() -> Response {
+pub async fn models(State(state): State<AppState>, headers: HeaderMap) -> Response {
     const CREATED_AT_ISO: &str = "2026-01-01T00:00:00Z"; // Anthropic 字段 (ISO 字符串)
     const CREATED_UNIX: i64 = 1_767_225_600; // OpenAI 字段 (Unix 秒, 同一时刻)
 
-    let data: Vec<serde_json::Value> = MODEL_IDS
-        .iter()
+    let include_custom = {
+        let settings = state.settings.read().await;
+        !settings.auth_enabled
+            || super::middleware::extract_token(&headers).as_deref() == Some(settings.auth_token.as_str())
+    };
+    let mut ids: Vec<String> = MODEL_IDS.iter().map(|id| (*id).to_owned()).collect();
+    if include_custom {
+        let models = state.virtual_models.read().await;
+        let mut custom: Vec<_> = models.values()
+            .filter(|config| config.name.is_custom() && !config.subscription_ids.is_empty())
+            .map(|config| config.name.as_str().to_owned())
+            .collect();
+        custom.sort_unstable();
+        ids.extend(custom.iter().map(|id| format!("anthropic/{id}")));
+        ids.extend(custom);
+    }
+    let data: Vec<serde_json::Value> = ids.iter()
         .map(|id| {
             json!({
                 // Anthropic 字段
@@ -900,17 +937,22 @@ pub async fn models() -> Response {
         })
         .collect();
 
-    Json(json!({
+    let mut response = Json(json!({
         // OpenAI list wrapper (extra: allow → Anthropic SDK 忽略)
         "object": "list",
         // 通用字段
         "data": data,
         // Anthropic page wrapper
         "has_more": false,
-        "first_id": MODEL_IDS.first(),
-        "last_id": MODEL_IDS.last(),
+        "first_id": ids.first(),
+        "last_id": ids.last(),
     }))
-    .into_response()
+    .into_response();
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store"),
+    );
+    response
 }
 
 #[cfg(test)]

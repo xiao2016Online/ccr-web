@@ -25,3 +25,9 @@ pub fn app_data_dir() -> AppResult<PathBuf> {
         _ => Ok(PathBuf::from("data")),
     }
 }
+
+/// 从 `AppState` 取数据目录。两形态通用 (bootstrap 时已解析一次), 新代码优先用它,
+/// 免得每处都写 cfg —— 上游 v7 的插件子系统大量调用。
+pub fn state_data_dir(state: &crate::state::AppState) -> AppResult<PathBuf> {
+    Ok(state.data_dir.clone())
+}

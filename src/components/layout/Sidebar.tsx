@@ -1,10 +1,11 @@
 import { NavLink, useLocation } from "react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
   ArrowRight,
   BarChart3,
   BookOpen,
+  Bot,
   DatabaseBackup,
   Info,
   Key,
@@ -13,6 +14,7 @@ import {
   Moon,
   Palette,
   PartyPopper,
+  Puzzle,
   Receipt,
   RefreshCw,
   ScrollText,
@@ -27,7 +29,7 @@ import { useVirtualModels } from "@/hooks/useVirtualModels";
 import { useProxyStatus } from "@/hooks/useSettings";
 import { useUpdater } from "@/hooks/useUpdater";
 import { useT } from "@/i18n";
-import { runtime, webLogout, webSession } from "@/runtime";
+import { isTauriHost, runtime, webLogout, webSession } from "@/runtime";
 import { LogoMark } from "@/components/sketch/LogoMark";
 import { SidebarIcon, type SidebarIconName } from "@/components/sketch/SidebarIcon";
 import { useReleaseNotesDialog } from "@/components/release-notes/ReleaseNotesController";
@@ -42,11 +44,13 @@ import { isPlainBased, type ThemeArt } from "@/themes";
 const PLAIN_ICONS: Record<SidebarIconName, LucideIcon> = {
   guide: BookOpen,
   live: Activity,
+  agent: Bot,
   vm: Layers,
   subs: Key,
   logs: ScrollText,
   stats: BarChart3,
   receipts: Receipt,
+  plugins: Puzzle,
   updates: RefreshCw,
   backup: DatabaseBackup,
   settings: SettingsIcon,
@@ -74,6 +78,10 @@ interface NavItem {
   to: string;
   label: string;
   icon: SidebarIconName;
+  /** 可选自定义标签内容 (如 Sparrow Bakery 字标 Logo)，无障碍名仍由 label 承担 */
+  labelNode?: ReactNode;
+  /** 悬停提示文案 */
+  title?: string;
   badge?: string | (() => string | null);
   dot?: boolean;
   /** 点的语义: 默认 err(红, 有更新) / ok(绿, 代理在跑) */
@@ -123,9 +131,17 @@ export function Sidebar() {
       badge: String(vms.data?.length ?? 5),
     },
     { to: "/subscriptions", label: t("sidebar.nav.subscriptions"), icon: "subs", badge: subsCount > 0 ? String(subsCount) : undefined },
+    ...(isTauriHost ? [{ to: "/agent-monitor", label: t("agentMonitor.title"), icon: "agent" as const }] : []),
     { to: "/request-logs", label: t("sidebar.nav.requestLogs"), icon: "logs" },
     { to: "/statistics", label: t("sidebar.nav.statistics"), icon: "stats" },
     { to: "/receipts", label: t("sidebar.nav.receipts"), icon: "receipts" },
+    // 插件中心: 网页端可查看 / 使用已安装插件, 安装卸载仅桌面窗口
+    {
+      to: "/plugins",
+      label: t("sidebar.nav.pluginsTitle"),
+      title: t("sidebar.nav.pluginsTitle"),
+      icon: "plugins",
+    },
     // 应用内更新是桌面专属; 服务器版升级 = 拉取新镜像, 不显示该入口
     ...(runtime.kind === "desktop"
       ? [
@@ -172,11 +188,21 @@ export function Sidebar() {
               to={it.to}
               className={({ isActive }) => cn("nav-item", (it.active ?? isActive) && "active")}
               aria-current={it.active === false ? false : undefined}
+              title={it.title}
             >
               <span className="nav-icon">
                 <NavIcon name={it.icon} art={art} />
               </span>
-              <span className="nav-label">{it.label}</span>
+              <span className={cn("nav-label", it.labelNode && "nav-label-logo")}>
+                {it.labelNode ? (
+                  <>
+                    {it.labelNode}
+                    <span className="sr-only">{it.label}</span>
+                  </>
+                ) : (
+                  it.label
+                )}
+              </span>
               {badge && <span className="badge mono">{badge}</span>}
               {!badge && it.dot && (
                 <NavDot

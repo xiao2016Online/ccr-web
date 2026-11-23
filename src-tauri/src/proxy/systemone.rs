@@ -338,6 +338,8 @@ pub fn log_entry(
         retry_count,
         error_message,
         upstream_response_body: upstream_body,
+        monitor_session: None,
+        trace_id: ctx.trace_id.clone(),
         client_tool: ctx.info.tool,
         client_user_agent: ctx.info.user_agent.clone(),
         client_version: ctx.info.version.clone(),
@@ -350,6 +352,8 @@ pub fn log_entry(
         upstream_effort: None,
         tool_calls: ToolLogFields::empty(),
         headers: ctx.header_log(),
+        net: ctx.net_log(),
+        plugins_applied: ctx.plugins_applied.clone(),
     }
 }
 
@@ -373,7 +377,7 @@ impl AttemptSink for LiveSink<'_> {
                 }
             }
             info!(sub_id = %c.sub_id, display_name = %c.display_name, real_model = %c.outbound.real_model, url = %c.outbound.url, "forwarding systemone request");
-            emit_attempt_started(self.state, c.sub_id, VirtualModelName::Jev);
+            emit_attempt_started(self.state, c.sub_id, VirtualModelName::Jev, self.ctx);
             let api_key = c.rt.read().await.row.api_key.clone();
             self.capture = crate::proxy::header_log::UpstreamHeaderCapture {
                 request: crate::proxy::header_log::capture_untagged(
@@ -382,8 +386,9 @@ impl AttemptSink for LiveSink<'_> {
                     &[api_key.as_str()],
                 ),
                 response: None,
+                net: None,
             };
-            let result = upstream::send(
+            let (result, net) = upstream::send_timed(
                 &self.state.http_client,
                 &c.outbound.url,
                 c.outbound.body.to_vec(),
@@ -391,6 +396,7 @@ impl AttemptSink for LiveSink<'_> {
                 false,
             )
             .await;
+            self.capture.net = Some(net);
             if let Ok(resp) = &result {
                 self.capture.response = crate::proxy::header_log::serialize(resp.headers(), self.ctx.log_headers);
             }
@@ -429,6 +435,7 @@ impl AttemptSink for LiveSink<'_> {
                 std::mem::take(&mut self.capture),
                 &hints,
                 &axum::http::HeaderMap::new(),
+                self.start,
             );
             let _ = self.state.request_log_tx.try_send(log_entry(c, r, retry_count, &attempt_ctx, latency));
         })
@@ -449,7 +456,7 @@ pub async fn dispatch(state: &AppState, raw_body: Bytes, client_model: String, c
     let pinned = match (vm_config.mode, ctx.session_key.as_deref()) {
         (RoutingMode::Sticky, Some(key)) => {
             let mut t = state.session_affinity.lock().unwrap_or_else(|e| e.into_inner());
-            t.get(vm, key, Instant::now())
+            t.get(vm.clone(), key, Instant::now())
         }
         _ => None,
     };

@@ -10,7 +10,7 @@ use chrono::{DateTime, Days, Local, NaiveDate, NaiveTime, TimeZone, Utc};
 use sqlx::SqlitePool;
 use crate::state::AppHandle;
 #[cfg(feature = "desktop")]
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, Duration};
 use tracing::{debug, warn};
@@ -146,6 +146,10 @@ pub struct RequestLogEntry {
     pub error_message: Option<String>,
     /// 仅错误路径填充, 截断至 4KB
     pub upstream_response_body: Option<String>,
+    /// 本机 Claude Code / Codex 会话 (client, session id)。落库为 session_client / session_id。
+    pub monitor_session: Option<(crate::session_monitor::Client, String)>,
+    /// 同一次入站请求的所有 attempt 共用 (见 ClientContext::trace_id)。
+    pub trace_id: Option<String>,
     /// 客户端识别 (Claude Code / Zed / Codex CLI / ...), None 表示未识别 → 前端展示 "unk"
     pub client_tool: Option<&'static str>,
     /// 客户端原始 User-Agent (识别成功时也保留, 用于详情抽屉)
@@ -172,6 +176,10 @@ pub struct RequestLogEntry {
     pub tool_calls: ToolLogFields,
     /// 三组请求头 (proxy/header_log.rs), 纯观测, 拿不到就是 None。
     pub headers: HeaderLogFields,
+    /// 网络耗时 (proxy/net_timing.rs), 纯观测。无 `Default`: 构造点照抄 `net: ctx.net_log()`。
+    pub net: crate::proxy::net_timing::NetTimingFields,
+    /// 命中的规则插件记录 (JSON 数组, 见 `plugins/rules.rs`)。无 `Default`: 构造点照抄 `plugins_applied: ctx.plugins_applied.clone()`。
+    pub plugins_applied: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -195,6 +203,14 @@ const FLUSH_SIZE: usize = 50;
 const FLUSH_INTERVAL: Duration = Duration::from_secs(5);
 const BUFFER_MAX: usize = 1000;
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct QuotaCrossing {
+    /// 首次跨过 100% 限额的周期 `(period, used, limit)`
+    pub reached: Option<(QuotaPeriod, u64, u64)>,
+    /// 首次跨过 80% 预警线 (且未到 100%) 的周期 `(period, used, limit, percent)`
+    pub warning: Option<(QuotaPeriod, u64, u64, u64)>,
+}
+
 /// Add one finished request's usage to the subscription's in-memory quota buckets.
 /// Returns the first period that crossed its limit *because of this entry* (for one-shot alerting).
 pub fn apply_entry_to_quota(
@@ -202,20 +218,48 @@ pub fn apply_entry_to_quota(
     entry: &RequestLogEntry,
     now: DateTime<Utc>,
 ) -> Option<QuotaPeriod> {
+    apply_entry_to_quota_detailed(rt, entry, now).reached.map(|(p, _, _)| p)
+}
+
+pub fn apply_entry_to_quota_detailed(
+    rt: &mut SubscriptionRuntime,
+    entry: &RequestLogEntry,
+    now: DateTime<Utc>,
+) -> QuotaCrossing {
     let input = entry.upstream_input_tokens.unwrap_or(0) as u64;
     let output = entry.upstream_output_tokens.unwrap_or(0) as u64;
     let cc = entry.upstream_cache_creation.unwrap_or(0) as u64;
     let cr = entry.upstream_cache_read.unwrap_or(0) as u64;
     if input + output + cc + cr == 0 {
-        return None;
+        return QuotaCrossing::default();
     }
-    let before = rt.row.token_quotas.first_exceeded(&rt.quota_usage, now);
+    let before_exceeded = rt.row.token_quotas.first_exceeded(&rt.quota_usage, now);
+    let before_used: [u64; 4] = crate::subscription::quota::ALL_PERIODS
+        .map(|p| rt.quota_usage.effective(p, now).total());
     rt.quota_usage.add(now, input, output, cc, cr);
-    let after = rt.row.token_quotas.first_exceeded(&rt.quota_usage, now);
-    match (before, after) {
-        (None, Some(p)) => Some(p),
+    let after_exceeded = rt.row.token_quotas.first_exceeded(&rt.quota_usage, now);
+    let reached = match (before_exceeded, after_exceeded) {
+        (None, Some(p)) => rt
+            .row
+            .token_quotas
+            .limit(p)
+            .map(|limit| (p, rt.quota_usage.effective(p, now).total(), limit)),
         _ => None,
+    };
+    let mut warning = None;
+    for (idx, p) in crate::subscription::quota::ALL_PERIODS.into_iter().enumerate() {
+        let Some(limit) = rt.row.token_quotas.limit(p).filter(|&l| l > 0) else {
+            continue;
+        };
+        let prev = before_used[idx];
+        let curr = rt.quota_usage.effective(p, now).total();
+        if curr < limit && prev.saturating_mul(100) / limit < 80 && curr.saturating_mul(100) / limit >= 80 {
+            let pct = (curr.saturating_mul(100) / limit).min(99);
+            warning = Some((p, curr, limit, pct));
+            break;
+        }
     }
+    QuotaCrossing { reached, warning }
 }
 
 pub async fn run_consumer(
@@ -235,15 +279,25 @@ pub async fn run_consumer(
                 match maybe_entry {
                     Some(entry) => {
                         let rt = subscriptions.read().await.get(&entry.subscription_id).cloned();
+                        let mut auth_type = None;
                         if let Some(rt) = rt {
                             let now = Utc::now();
-                            let crossed = {
+                            let crossing = {
                                 let mut g = rt.write().await;
-                                apply_entry_to_quota(&mut g, &entry, now)
+                                auth_type = Some(g.row.auth_type);
+                                apply_entry_to_quota_detailed(&mut g, &entry, now)
                             };
                             dirty.insert(entry.subscription_id);
-                            if let Some(period) = crossed {
-                                let display_name = rt.read().await.row.display_name.clone();
+                            if let Some((period, used, limit)) = crossing.reached {
+                                let (display_name, provider_name) = {
+                                    let g = rt.read().await;
+                                    let p = if g.row.provider_display_name.is_empty() {
+                                        g.row.provider_id.clone()
+                                    } else {
+                                        g.row.provider_display_name.clone()
+                                    };
+                                    (g.row.display_name.clone(), p)
+                                };
                                 let ev = EventEntry {
                                     id: Uuid::new_v4(),
                                     timestamp_ms: now.timestamp_millis(),
@@ -263,8 +317,41 @@ pub async fn run_consumer(
                                 ) {
                                     warn!(?e, subscription_id = %entry.subscription_id, "quota_reached 事件投递失败");
                                 }
+                                if let Some(st) = app.try_state::<crate::state::AppState>() {
+                                    st.notify.emit(crate::notify::NotifyEvent::SubscriptionQuotaReached {
+                                        subscription_id: entry.subscription_id.to_string(),
+                                        subscription_name: display_name,
+                                        provider_name,
+                                        period: period.as_str().to_string(),
+                                        used,
+                                        limit,
+                                    });
+                                }
+                            } else if let Some((period, used, limit, percent)) = crossing.warning {
+                                if let Some(st) = app.try_state::<crate::state::AppState>() {
+                                    let (display_name, provider_name) = {
+                                        let g = rt.read().await;
+                                        let p = if g.row.provider_display_name.is_empty() {
+                                            g.row.provider_id.clone()
+                                        } else {
+                                            g.row.provider_display_name.clone()
+                                        };
+                                        (g.row.display_name.clone(), p)
+                                    };
+                                    st.notify.emit(crate::notify::NotifyEvent::SubscriptionQuotaWarning {
+                                        subscription_id: entry.subscription_id.to_string(),
+                                        subscription_name: display_name,
+                                        provider_name,
+                                        period: period.as_str().to_string(),
+                                        used,
+                                        limit,
+                                        percent,
+                                    });
+                                }
                             }
                         }
+                        crate::observability::live_feed::record(&app, &entry, auth_type);
+                        crate::session_monitor::observe_proxy(&app, &entry, auth_type).await;
                         if buffer.len() >= BUFFER_MAX {
                             buffer.pop_front();
                         }
@@ -425,6 +512,13 @@ pub(crate) async fn flush_batch(
             }
         }
 
+        let purpose = &entry.tool_calls.purpose;
+        // 只有工具名; 序列化失败就不记 (纪律同 tool_use_names)
+        let prev_tools = (!purpose.prev_tools.is_empty())
+            .then(|| serde_json::to_string(&purpose.prev_tools).ok())
+            .flatten();
+        let purpose = purpose.clone();
+
         let result = sqlx::query(
             "INSERT INTO requests (id, timestamp, virtual_model_name, subscription_id,
                 provider_id, endpoint_id, real_model_name, response_model_name,
@@ -437,9 +531,15 @@ pub(crate) async fn flush_batch(
                 entry_kind, downstream_http_version,
                 client_effort, effective_effort, effort_source, upstream_effort,
                 stop_reason, tools_offered_count, tool_result_count, tool_use_count, tool_use_names,
-                client_request_headers, upstream_request_headers, upstream_response_headers)
+                client_request_headers, upstream_request_headers, upstream_response_headers,
+                purpose_kind, purpose_guessed, purpose_turn, purpose_step, purpose_prev_tools,
+                session_client, session_id, trace_id,
+                net_prep_ms, net_dns_ms, net_connect_ms, net_headers_ms,
+                net_conn_reused, net_via_proxy, net_remote_addr, net_upstream_stream,
+                plugins_applied)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                     ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(entry.id.to_string())
         .bind(entry.timestamp_ms)
@@ -480,6 +580,23 @@ pub(crate) async fn flush_batch(
         .bind(entry.headers.client_request)
         .bind(entry.headers.upstream_request)
         .bind(entry.headers.upstream_response)
+        .bind(purpose.kind.as_str())
+        .bind(purpose.guessed as i64)
+        .bind(purpose.turn.map(i64::from))
+        .bind(purpose.step.map(i64::from))
+        .bind(prev_tools)
+        .bind(entry.monitor_session.as_ref().map(|(c, _)| c.name()))
+        .bind(entry.monitor_session.map(|(_, id)| id))
+        .bind(entry.trace_id)
+        .bind(entry.net.prep_ms.map(|v| v as i64))
+        .bind(entry.net.dns_ms.map(|v| v as i64))
+        .bind(entry.net.connect_ms.map(|v| v as i64))
+        .bind(entry.net.headers_ms.map(|v| v as i64))
+        .bind(entry.net.conn_reused.map(i64::from))
+        .bind(entry.net.via_proxy.map(i64::from))
+        .bind(entry.net.remote_addr)
+        .bind(entry.net.upstream_stream.map(i64::from))
+        .bind(entry.plugins_applied)
         .execute(&mut *tx)
         .await;
         if let Err(e) = result {
@@ -656,6 +773,8 @@ mod tests {
             retry_count: 0,
             error_message: None,
             upstream_response_body: None,
+            monitor_session: None,
+            trace_id: None,
             client_tool: None,
             client_user_agent: None,
             client_version: None,
@@ -668,7 +787,36 @@ mod tests {
             upstream_effort: None,
             tool_calls: crate::proxy::tool_log::ToolLogFields::empty(),
             headers: crate::proxy::header_log::HeaderLogFields::none(),
+            net: crate::proxy::net_timing::NetTimingFields::none(),
+            plugins_applied: None,
         }
+    }
+
+    /// 规则插件命中记录落库后原样读回 (migration 034 往返)。
+    #[tokio::test]
+    async fn flush_persists_and_reads_back_plugins_applied() {
+        let pool = fresh_pool().await;
+        let sub = Uuid::new_v4();
+        let mut with_plugins = make_entry(1000, VirtualModelName::Haiku, sub, "p", RequestStatus::Success, Some(100), Some(10), Some(20));
+        let json = r#"[{"plugin_id":"rules-side-tasks","version":"1.0.0","rules":["side-tasks"]}]"#.to_string();
+        with_plugins.plugins_applied = Some(json.clone());
+        let plain = make_entry(2000, VirtualModelName::Sonnet, sub, "p", RequestStatus::Success, Some(100), Some(10), Some(20));
+        let id_with = with_plugins.id.to_string();
+        let id_plain = plain.id.to_string();
+        flush_batch(&pool, vec![with_plugins, plain], vec![]).await.unwrap();
+
+        let got: Option<String> = sqlx::query_scalar("SELECT plugins_applied FROM requests WHERE id = ?")
+            .bind(&id_with)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(got.as_deref(), Some(json.as_str()));
+        let got_plain: Option<String> = sqlx::query_scalar("SELECT plugins_applied FROM requests WHERE id = ?")
+            .bind(&id_plain)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(got_plain, None);
     }
 
     /// First-content timing keeps zero distinct from unknown and persists with the log batch.
@@ -688,6 +836,75 @@ mod tests {
         assert_eq!(values, vec![None, Some(0), Some(850)]);
     }
 
+    /// 实时路由 ⊂ 请求日志: 同一条 entry 经 live 事件 (from_entry) 与落库再读回 (from_row) 得到同一份摘要。
+    #[tokio::test]
+    async fn summary_from_entry_and_from_row_agree() {
+        use crate::observability::live_feed::{from_entry, from_row, SUMMARY_COLUMNS};
+        use crate::proxy::purpose::{PurposeKind, RequestPurpose};
+        let pool = fresh_pool().await;
+        let mut entry = make_entry(1234, VirtualModelName::Opus, Uuid::new_v4(), "p", RequestStatus::Error, Some(900), Some(50), None);
+        entry.http_status = Some(429);
+        entry.error_message = Some("rate limited".into());
+        entry.response_model_name = Some("resp-model".into());
+        entry.first_content_ms = Some(120);
+        entry.upstream_cache_read = Some(7);
+        entry.retry_count = 1;
+        entry.client_tool = Some("claude-code");
+        entry.effective_effort = Some("max".into());
+        entry.trace_id = Some("trace-1".into());
+        entry.monitor_session = Some((crate::session_monitor::Client::Claude, "sess-1".into()));
+        entry.tool_calls.tool_use_names = Some(r#"["Read","Read"]"#.into());
+        entry.tool_calls.tools_offered_count = Some(23);
+        entry.tool_calls.purpose = RequestPurpose {
+            kind: PurposeKind::Agent,
+            guessed: true,
+            turn: Some(2),
+            step: Some(3),
+            prev_tools: vec!["Grep".into(), "Glob".into()],
+        };
+        entry.net = crate::proxy::net_timing::NetTimingFields {
+            prep_ms: Some(4),
+            dns_ms: Some(30),
+            connect_ms: Some(180),
+            headers_ms: Some(260),
+            conn_reused: Some(false),
+            via_proxy: Some(false),
+            remote_addr: Some("1.2.3.4:443".into()),
+            upstream_stream: Some(true),
+        };
+        let net = entry.net.clone();
+        let live = from_entry(&entry, None);
+        assert_eq!(live.network_ms, Some(260));
+        flush_batch(&pool, vec![entry], vec![]).await.unwrap();
+        let sql = format!("SELECT {SUMMARY_COLUMNS} FROM requests");
+        let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str())).fetch_one(&pool).await.unwrap();
+        assert_eq!(crate::proxy::net_timing::NetTimingFields::from_row(&row), net);
+        let stored = from_row(&row, &Default::default());
+        assert_eq!(serde_json::to_value(&stored).unwrap(), serde_json::to_value(&live).unwrap());
+        assert_eq!(stored.purpose.as_ref().map(|p| p.kind), Some(PurposeKind::Agent));
+        assert_eq!(stored.session.as_ref().map(|s| s.id.as_str()), Some("sess-1"));
+    }
+
+    /// 迁移 030 之前的老行: 用途 / 会话 / trace 都读成 None, 不报错。
+    #[tokio::test]
+    async fn summary_from_legacy_row_has_no_purpose() {
+        use crate::observability::live_feed::{from_row, SUMMARY_COLUMNS};
+        let pool = fresh_pool().await;
+        sqlx::query(
+            "INSERT INTO requests (id, timestamp, virtual_model_name, subscription_id, provider_id,
+             endpoint_id, real_model_name, is_streaming, status)
+             VALUES ('old', 1, 'sonnet', 's', 'p', 'e', 'm', 0, 'success')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let sql = format!("SELECT {SUMMARY_COLUMNS} FROM requests");
+        let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str())).fetch_one(&pool).await.unwrap();
+        let s = from_row(&row, &Default::default());
+        assert!(s.purpose.is_none() && s.session.is_none() && s.trace_id.is_none());
+        assert_eq!((s.model.as_str(), s.status), ("m", "success"));
+    }
+
     /// 工具调用 5 列: 有值能读回; request_only 的 entry 响应侧三列为 NULL。
     #[tokio::test]
     async fn flush_persists_tool_call_columns() {
@@ -705,6 +922,7 @@ mod tests {
         full.tool_calls = tally.fields(&RequestToolShape {
             tools_offered_count: Some(12),
             tool_result_count: Some(3),
+            ..Default::default()
         });
         let full_id = full.id.to_string();
 
@@ -713,6 +931,7 @@ mod tests {
         bare.tool_calls = ToolLogFields::request_only(&RequestToolShape {
             tools_offered_count: Some(12),
             tool_result_count: Some(0),
+            ..Default::default()
         });
         let bare_id = bare.id.to_string();
 
@@ -1131,7 +1350,7 @@ mod tests {
         e1.client_tool = Some("claude_code");
         let mut t1 = ToolUseTally::default();
         t1.observe_name("Read"); t1.observe_name("Bash"); t1.observe_name("Read");
-        e1.tool_calls = t1.fields(&RequestToolShape { tools_offered_count: Some(9), tool_result_count: Some(2) });
+        e1.tool_calls = t1.fields(&RequestToolShape { tools_offered_count: Some(9), tool_result_count: Some(2), ..Default::default() });
 
         // e2: 未识别客户端, 调 Read×1, 回传 0
         let mut e2 = make_entry(day_start + 1, VirtualModelName::Sonnet, sub, "anthropic",
@@ -1139,13 +1358,13 @@ mod tests {
         e2.client_tool = None;
         let mut t2 = ToolUseTally::default();
         t2.observe_name("Read");
-        e2.tool_calls = t2.fields(&RequestToolShape { tools_offered_count: Some(9), tool_result_count: Some(0) });
+        e2.tool_calls = t2.fields(&RequestToolShape { tools_offered_count: Some(9), tool_result_count: Some(0), ..Default::default() });
 
         // e3: 成功但 0 次工具调用 → 不计入 tool_use_request_count
         let mut e3 = make_entry(day_start + 2, VirtualModelName::Sonnet, sub, "anthropic",
             RequestStatus::Success, Some(100), Some(1), Some(2));
         e3.client_tool = Some("claude_code");
-        e3.tool_calls = ToolUseTally::default().fields(&RequestToolShape { tools_offered_count: Some(9), tool_result_count: Some(1) });
+        e3.tool_calls = ToolUseTally::default().fields(&RequestToolShape { tools_offered_count: Some(9), tool_result_count: Some(1), ..Default::default() });
 
         flush_batch(&pool, vec![e1, e2, e3], vec![]).await.expect("flush");
 

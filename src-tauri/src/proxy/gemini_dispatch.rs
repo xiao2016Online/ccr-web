@@ -148,7 +148,8 @@ pub async fn dispatch_gemini_attempt(
 
     // 强制 streaming 上游, 因为 URL 已是 :streamGenerateContent?alt=sse.
     capture.request = crate::proxy::header_log::capture_untagged(&headers, log_headers, &[api_key.as_str(), secret_raw]);
-    let send_result = upstream::send(http_client, &url, body_bytes, headers, true).await;
+    let (send_result, net) = upstream::send_timed(http_client, &url, body_bytes, headers, true).await;
+    capture.net = Some(net);
     let upstream_response = match send_result {
         Ok(r) => {
             capture.response = crate::proxy::header_log::serialize(r.headers(), log_headers);
@@ -418,6 +419,8 @@ fn finalize_gemini_streaming(
             retry_count,
             error_message: timing.error_message().map(str::to_owned),
             upstream_response_body: None,
+            monitor_session: ctx.monitor_session(),
+            trace_id: ctx.trace_id.clone(),
             client_tool: ctx.info.tool,
             client_user_agent: ctx.info.user_agent.clone(),
             client_version: ctx.info.version.clone(),
@@ -430,6 +433,8 @@ fn finalize_gemini_streaming(
             upstream_effort: None,
             tool_calls: tool_tally.fields(&ctx.tools),
             headers: ctx.header_log(),
+            net: ctx.net_log(),
+            plugins_applied: ctx.plugins_applied.clone(),
         };
         let _ = log_tx.try_send(entry);
     });
@@ -550,6 +555,8 @@ async fn collect_gemini_to_json_response(
         retry_count,
         error_message: None,
         upstream_response_body: None,
+        monitor_session: ctx.monitor_session(),
+        trace_id: ctx.trace_id.clone(),
         client_tool: ctx.info.tool,
         client_user_agent: ctx.info.user_agent.clone(),
         client_version: ctx.info.version.clone(),
@@ -562,6 +569,8 @@ async fn collect_gemini_to_json_response(
         upstream_effort: None,
         tool_calls,
         headers: ctx.header_log(),
+        net: ctx.net_log(),
+            plugins_applied: ctx.plugins_applied.clone(),
     };
     let _ = log_tx.try_send(entry);
 

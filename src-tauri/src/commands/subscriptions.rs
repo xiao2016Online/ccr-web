@@ -258,6 +258,9 @@ pub struct SubscriptionPatch {
     pub url_params: Option<BTreeMap<String, String>>,
     /// 自定义订阅: 改连接信息。内置订阅传该字段会被拒绝。
     pub connection: Option<ConnectionPatch>,
+    /// 包月 / 按量 (只影响计价插件的费用口径)
+    #[serde(default)]
+    pub billing: Option<crate::subscription::model::Billing>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -322,7 +325,7 @@ pub async fn list_subscriptions(state: State<'_, AppState>) -> AppResult<Vec<Sub
     for (id, rt) in subs.iter() {
         let guard = rt.read().await;
         let referenced = refs.get(id).cloned().unwrap_or_default();
-        out.push(SubscriptionDto::from_runtime(&guard, referenced, &state.providers));
+        out.push(SubscriptionDto::from_runtime(&guard, referenced, &state.providers()));
     }
     out.sort_by(|a, b| a.display_name.cmp(&b.display_name));
     Ok(out)
@@ -340,7 +343,7 @@ pub async fn get_subscription(
         .get(&id)
         .ok_or_else(|| AppError::SubscriptionNotFound(id.to_string()))?;
     let guard = rt.read().await;
-    Ok(SubscriptionDto::from_runtime(&guard, referenced, &state.providers))
+    Ok(SubscriptionDto::from_runtime(&guard, referenced, &state.providers()))
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -358,10 +361,13 @@ pub async fn create_subscription(
             endpoint_id,
             url_params,
         } => {
-            let provider = state
-                .providers
+            let registry = state.providers();
+            let provider = registry
                 .get(&provider_id)
                 .ok_or_else(|| AppError::ProviderNotFound(provider_id.clone()))?;
+            if !registry.is_selectable(&provider_id) {
+                return Err(AppError::BadRequest("这个厂商插件已停用, 请先在插件页启用".into()));
+            }
             let endpoint = provider
                 .endpoint(&endpoint_id)
                 .ok_or_else(|| AppError::EndpointNotFound(endpoint_id.clone()))?;
@@ -378,6 +384,7 @@ pub async fn create_subscription(
                 model_slots: input.model_slots,
                 slot_efforts: SlotEfforts::default(),
                 slot_schedules: Default::default(),
+                billing: Default::default(),
                 token_quotas: TokenQuotas::default(),
                 enabled: true,
                 is_auth_failed: false,
@@ -442,6 +449,7 @@ pub async fn create_subscription(
                 model_slots,
                 slot_efforts: SlotEfforts::default(),
                 slot_schedules: Default::default(),
+                billing: Default::default(),
                 token_quotas: TokenQuotas::default(),
                 enabled: true,
                 is_auth_failed: false,
@@ -468,6 +476,47 @@ pub async fn create_subscription(
         }
     };
 
+    insert_subscription(&state, row).await
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn clone_subscription(
+    state: State<'_, AppState>,
+    id: String,
+    display_name: String,
+) -> AppResult<SubscriptionDto> {
+    let id = Uuid::parse_str(&id).map_err(|_| AppError::BadRequest("Invalid subscription ID".into()))?;
+    let display_name = display_name.trim();
+    if display_name.is_empty() || display_name.chars().count() > 80 {
+        return Err(AppError::BadRequest("Enter a subscription name of 1–80 characters".into()));
+    }
+    let source = state.subscriptions.read().await.get(&id).cloned()
+        .ok_or_else(|| AppError::SubscriptionNotFound(id.to_string()))?;
+    let row = duplicate_subscription_row(&source.read().await.row, display_name, Utc::now())?;
+    insert_subscription(&state, row).await
+}
+
+fn duplicate_subscription_row(
+    source: &SubscriptionRow,
+    display_name: &str,
+    now: chrono::DateTime<Utc>,
+) -> AppResult<SubscriptionRow> {
+    let mut row = source.clone();
+    if matches!(row.auth_type, AuthType::ChatgptOauth | AuthType::KiroOauth) {
+        return Err(AppError::BadRequest("OAuth subscriptions require separate authorization".into()));
+    }
+    row.id = Uuid::new_v4();
+    row.display_name = display_name.to_owned();
+    row.created_at = now;
+    row.updated_at = now;
+    row.oauth_metadata = OAuthMetadata::default();
+    row.is_auth_failed = false;
+    row.last_error_message = None;
+    Ok(row)
+}
+
+async fn insert_subscription(state: &AppState, row: SubscriptionRow) -> AppResult<SubscriptionDto> {
+    let id = row.id;
     store::insert(&state.db, &row).await?;
 
     let rt = Arc::new(RwLock::new(SubscriptionRuntime::from_row(row)));
@@ -477,7 +526,7 @@ pub async fn create_subscription(
     }
 
     let guard = rt.read().await;
-    Ok(SubscriptionDto::from_runtime(&guard, vec![], &state.providers))
+    Ok(SubscriptionDto::from_runtime(&guard, vec![], &state.providers()))
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -535,8 +584,8 @@ pub async fn update_subscription(
                 "自定义订阅不支持切 endpoint / url_params, 请用 connection patch 改连接信息".into(),
             ));
         }
-        let provider = state
-            .providers
+        let registry = state.providers();
+        let provider = registry
             .get(&provider_id)
             .ok_or_else(|| AppError::ProviderNotFound(provider_id.clone()))?;
         let endpoint_id = patch.endpoint_id.clone().unwrap_or(current_endpoint);
@@ -607,6 +656,9 @@ pub async fn update_subscription(
         if let Some(v) = patch.extra_headers {
             guard.row.extra_headers = v;
         }
+        if let Some(v) = patch.billing {
+            guard.row.billing = v;
+        }
         if let Some((eid, snap)) = resnapshot {
             guard.row.endpoint_id = eid;
             guard.row.base_url = snap.base_url;
@@ -649,7 +701,66 @@ pub async fn update_subscription(
     let refs = collect_references(&state).await;
     let guard = rt.read().await;
     let referenced = refs.get(&id).cloned().unwrap_or_default();
-    Ok(SubscriptionDto::from_runtime(&guard, referenced, &state.providers))
+    Ok(SubscriptionDto::from_runtime(&guard, referenced, &state.providers()))
+}
+
+/// 预览「按新描述重建连接」: 用当前注册表里的厂商描述重算连接快照, 列出与现有快照的差异。
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn preview_subscription_rebuild(
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<crate::subscription::rebuild::RebuildPreview> {
+    let id = Uuid::parse_str(&id).map_err(|_| AppError::BadRequest("无效 id".into()))?;
+    let rt = state
+        .subscriptions
+        .read()
+        .await
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| AppError::SubscriptionNotFound(id.to_string()))?;
+    let guard = rt.read().await;
+    Ok(crate::subscription::rebuild::preview(&guard.row, &state.providers()))
+}
+
+/// 按当前厂商描述重建订阅的连接快照 (内置 yaml / 厂商插件更新后)。没有变化时原样返回。
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn rebuild_subscription_connection(state: State<'_, AppState>, id: String) -> AppResult<SubscriptionDto> {
+    use crate::subscription::rebuild::{self, BlockedReason};
+    let id = Uuid::parse_str(&id).map_err(|_| AppError::BadRequest("无效 id".into()))?;
+    let rt = state
+        .subscriptions
+        .read()
+        .await
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| AppError::SubscriptionNotFound(id.to_string()))?;
+    let registry = state.providers();
+    {
+        let mut guard = rt.write().await;
+        let (plan, changes) = rebuild::plan(&guard.row, &registry).map_err(|reason| {
+            AppError::BadRequest(
+                match reason {
+                    BlockedReason::UserDefined => "自定义订阅请直接编辑连接信息",
+                    BlockedReason::Oauth => "OAuth 订阅的连接由登录流程管理",
+                    BlockedReason::ProviderMissing => "找不到这个订阅的厂商 (插件可能已卸载)",
+                    BlockedReason::EndpointMissing => "新的厂商描述里没有这个端点了, 请改选端点",
+                    BlockedReason::ParamsInvalid => "订阅填写的参数不符合新的厂商描述, 请在编辑页重新填写",
+                    BlockedReason::AuthChanged => "新的厂商描述换了鉴权方式, 请新建订阅",
+                    BlockedReason::ProtocolChanged => "新的厂商描述换了端点协议, 请新建订阅",
+                }
+                .into(),
+            )
+        })?;
+        if !changes.is_empty() {
+            rebuild::apply(&mut guard.row, plan);
+            guard.row.updated_at = Utc::now();
+            store::update_row(&state.db, &guard.row).await?;
+        }
+    }
+    let refs = collect_references(&state).await;
+    let guard = rt.read().await;
+    let referenced = refs.get(&id).cloned().unwrap_or_default();
+    Ok(SubscriptionDto::from_runtime(&guard, referenced, &registry))
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -690,6 +801,8 @@ pub async fn update_subscription_key(
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn delete_subscription(state: State<'_, AppState>, id: String) -> AppResult<()> {
     let id = Uuid::parse_str(&id).map_err(|_| AppError::BadRequest("无效 id".into()))?;
+    let _edit = state.route_edits.lock().await;
+    store::delete(&state.db, &id).await?;
     {
         let mut subs = state.subscriptions.write().await;
         subs.remove(&id);
@@ -698,10 +811,10 @@ pub async fn delete_subscription(state: State<'_, AppState>, id: String) -> AppR
         let mut vms = state.virtual_models.write().await;
         for vm in vms.values_mut() {
             vm.subscription_ids.retain(|x| *x != id);
+            vm.upstream_models.remove(&id);
         }
     }
     state.chatgpt_oauth.forget(id).await;
-    store::delete(&state.db, &id).await?;
     Ok(())
 }
 
@@ -758,7 +871,7 @@ pub async fn test_connection(
 
     // 选模型与带的思考强度用同一时刻, 不会一个按半点前、一个按半点后
     let clock = crate::subscription::schedule::WallClock::now();
-    let (model, slot) = match ping::pick_test_model_at(&row, clock) {
+    let (model, slot) = match ping::pick_bound_test_model_at(&state, &row, clock).await {
         Some(m) => m,
         None => {
             let note = ping::ProbeNote::NoTestModel;
@@ -982,6 +1095,32 @@ pub async fn refresh_subscription_balance(
                 let mut guard = rt.write().await;
                 guard.balance_cache = Some(snapshot.clone());
             }
+            let low_entry = snapshot
+                .entries
+                .iter()
+                .find(|e| matches!(e.severity, crate::subscription::model::BalanceSeverity::Critical))
+                .or_else(|| {
+                    snapshot
+                        .entries
+                        .iter()
+                        .find(|e| matches!(e.severity, crate::subscription::model::BalanceSeverity::Low))
+                });
+            if let Some(entry) = low_entry {
+                let provider_name = if row.provider_display_name.is_empty() {
+                    row.provider_id.clone()
+                } else {
+                    row.provider_display_name.clone()
+                };
+                state
+                    .notify
+                    .emit(crate::notify::NotifyEvent::SubscriptionBalanceLow {
+                        subscription_id: row.id.to_string(),
+                        subscription_name: row.display_name.clone(),
+                        provider_name,
+                        remaining: entry.value_text.clone(),
+                        unit: entry.unit.clone(),
+                    });
+            }
             Ok(RefreshBalanceResult::Success {
                 snapshot,
                 fetched_at,
@@ -1168,7 +1307,7 @@ pub async fn update_token_quotas(
     store::update_row(&state.db, &row_snapshot).await?;
     let referenced_by = referenced_by_names(&state, &id).await;
     let guard = rt.read().await;
-    Ok(SubscriptionDto::from_runtime(&guard, referenced_by, &state.providers))
+    Ok(SubscriptionDto::from_runtime(&guard, referenced_by, &state.providers()))
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -1207,7 +1346,7 @@ pub async fn update_slot_schedules(
     store::update_row(&state.db, &row_snapshot).await?;
     let referenced_by = referenced_by_names(&state, &id).await;
     let guard = rt.read().await;
-    Ok(SubscriptionDto::from_runtime(&guard, referenced_by, &state.providers))
+    Ok(SubscriptionDto::from_runtime(&guard, referenced_by, &state.providers()))
 }
 
 /// The host machine's local wall clock, as the scheduler sees it. The web UI / TUI may run on
@@ -1249,7 +1388,7 @@ pub async fn reset_total_quota_usage(
     store::save_quota_usage_snapshot(&state.db, &id, &usage).await?;
     let referenced_by = referenced_by_names(&state, &id).await;
     let guard = rt.read().await;
-    Ok(SubscriptionDto::from_runtime(&guard, referenced_by, &state.providers))
+    Ok(SubscriptionDto::from_runtime(&guard, referenced_by, &state.providers()))
 }
 
 #[cfg(test)]
@@ -1504,5 +1643,34 @@ mod protocol_tests {
         s.opus = vec![rule("08:15")];
         let err = check_schedules_for(EndpointProtocol::Systemone, &s).unwrap_err();
         assert!(err.to_string().contains("System One"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod clone_tests {
+    use super::*;
+
+    #[test]
+    fn api_key_copy_keeps_config_and_resets_failure() {
+        let mut source = SubscriptionRow::test_fixture("anthropic", "default");
+        source.auth_type = AuthType::ApiKey;
+        source.api_key = "test-key".into();
+        source.enabled = false;
+        source.is_auth_failed = true;
+        source.last_error_message = Some("expired".into());
+        let now = Utc::now();
+        let copy = duplicate_subscription_row(&source, "Copy", now).unwrap();
+
+        assert_ne!(copy.id, source.id);
+        assert_eq!(copy.api_key, source.api_key);
+        assert_eq!(copy.base_url, source.base_url);
+        assert_eq!(copy.display_name, "Copy");
+        assert_eq!(copy.created_at, now);
+        assert!(!copy.enabled);
+        assert!(!copy.is_auth_failed);
+        assert!(copy.last_error_message.is_none());
+        assert!(source.is_auth_failed);
+        source.auth_type = AuthType::ChatgptOauth;
+        assert!(duplicate_subscription_row(&source, "OAuth copy", now).is_err());
     }
 }

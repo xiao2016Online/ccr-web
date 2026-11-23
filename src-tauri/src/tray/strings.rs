@@ -12,10 +12,26 @@ pub enum TrayLocale {
     Ja,
 }
 
+/// 系统语言标签。桌面读 OS (Tauri 的 sys_locale 封装); 服务器读 `LC_ALL` / `LANG`。
+#[cfg(feature = "desktop")]
+fn system_locale_tag() -> Option<String> {
+    tauri_plugin_os::locale()
+}
+
+#[cfg(not(feature = "desktop"))]
+fn system_locale_tag() -> Option<String> {
+    std::env::var("LC_ALL")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .or_else(|| std::env::var("LANG").ok().filter(|v| !v.is_empty()))
+        .map(|v| v.split('.').next().unwrap_or("").to_string())
+        .filter(|v| !v.is_empty())
+}
+
 impl TrayLocale {
     /// `settings.preferred_language`（"system" / "zh" / "zh-Hant" / "en" / "ja"）→ 实际语言。
     pub fn from_pref(pref: &str) -> Self {
-        Self::resolve(pref, tauri_plugin_os::locale().as_deref())
+        Self::resolve(pref, system_locale_tag().as_deref())
     }
 
     /// `from_pref` 的纯函数版本：系统语言标签显式传入而不是直接读 OS，

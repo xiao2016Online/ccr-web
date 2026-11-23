@@ -168,10 +168,18 @@ pub async fn dispatch_oauth_attempt(
         ReqHeaderName::from_static("originator"),
         ReqHeaderValue::from_static(CODEX_ORIGINATOR),
     );
+    // 同步 session_id header 与 body.prompt_cache_key: ChatGPT Codex 后端按 session_id 头做
+    // KV cache 粘性路由, 缺失会导致多轮对话频繁 cache miss.
+    if let Some(cache_key) = extras.prompt_cache_key.as_deref().filter(|s| !s.is_empty()) {
+        if let Ok(val) = ReqHeaderValue::from_str(cache_key) {
+            headers.insert(ReqHeaderName::from_static("session_id"), val);
+        }
+    }
 
     // 4. 发送 (强制 streaming 上游, 因为 ChatGPT 后端拒绝非流式)
     capture.request = crate::proxy::header_log::capture_untagged(&headers, log_headers, &[access_token.as_str()]);
-    let send_result = upstream::send(http_client, &url, body_bytes, headers, true).await;
+    let (send_result, net) = upstream::send_timed(http_client, &url, body_bytes, headers, true).await;
+    capture.net = Some(net);
 
     let upstream_response = match send_result {
         Ok(r) => {
@@ -510,6 +518,8 @@ fn finalize_streaming(
             retry_count,
             error_message: upstream_error.clone(),
             upstream_response_body: None,
+            monitor_session: ctx.monitor_session(),
+            trace_id: ctx.trace_id.clone(),
             client_tool: ctx.info.tool,
             client_user_agent: ctx.info.user_agent.clone(),
             client_version: ctx.info.version.clone(),
@@ -522,6 +532,8 @@ fn finalize_streaming(
             upstream_effort: upstream_effort_echo,
             tool_calls: tool_tally.fields(&ctx.tools),
             headers: ctx.header_log(),
+            net: ctx.net_log(),
+            plugins_applied: ctx.plugins_applied.clone(),
         };
         let _ = log_tx.try_send(entry);
     });
@@ -628,6 +640,8 @@ async fn collect_to_json_response(
             retry_count,
             error_message: Some(message.clone()),
             upstream_response_body: None,
+            monitor_session: ctx.monitor_session(),
+            trace_id: ctx.trace_id.clone(),
             client_tool: ctx.info.tool,
             client_user_agent: ctx.info.user_agent.clone(),
             client_version: ctx.info.version.clone(),
@@ -640,6 +654,8 @@ async fn collect_to_json_response(
             upstream_effort: upstream_effort_echo.clone(),
             tool_calls: ToolLogFields::request_only(&ctx.tools),
             headers: ctx.header_log(),
+            net: ctx.net_log(),
+            plugins_applied: ctx.plugins_applied.clone(),
         };
         let _ = log_tx.try_send(entry);
         return (
@@ -714,6 +730,8 @@ async fn collect_to_json_response(
         retry_count,
         error_message: None,
         upstream_response_body: None,
+        monitor_session: ctx.monitor_session(),
+        trace_id: ctx.trace_id.clone(),
         client_tool: ctx.info.tool,
         client_user_agent: ctx.info.user_agent.clone(),
         client_version: ctx.info.version.clone(),
@@ -726,6 +744,8 @@ async fn collect_to_json_response(
         upstream_effort: upstream_effort_echo.clone(),
         tool_calls,
         headers: ctx.header_log(),
+        net: ctx.net_log(),
+            plugins_applied: ctx.plugins_applied.clone(),
     };
     let _ = log_tx.try_send(entry);
 
@@ -861,7 +881,8 @@ pub async fn dispatch_kiro_attempt(
 
     // 4. 发送 (Kiro 后端响应总是 Event Stream)
     capture.request = crate::proxy::header_log::capture_untagged(&headers, log_headers, &[access_token.as_str()]);
-    let send_result = upstream::send(http_client, &url, body_bytes, headers, true).await;
+    let (send_result, net) = upstream::send_timed(http_client, &url, body_bytes, headers, true).await;
+    capture.net = Some(net);
     let upstream_response = match send_result {
         Ok(r) => {
             capture.response = crate::proxy::header_log::serialize(r.headers(), log_headers);
@@ -1089,6 +1110,8 @@ fn finalize_kiro_streaming(
             retry_count,
             error_message: timing.error_message().map(str::to_owned),
             upstream_response_body: None,
+            monitor_session: ctx.monitor_session(),
+            trace_id: ctx.trace_id.clone(),
             client_tool: ctx.info.tool,
             client_user_agent: ctx.info.user_agent.clone(),
             client_version: ctx.info.version.clone(),
@@ -1101,6 +1124,8 @@ fn finalize_kiro_streaming(
             upstream_effort: None,
             tool_calls: tool_tally.fields(&ctx.tools),
             headers: ctx.header_log(),
+            net: ctx.net_log(),
+            plugins_applied: ctx.plugins_applied.clone(),
         };
         let _ = log_tx.try_send(entry);
     });
@@ -1213,6 +1238,8 @@ async fn collect_kiro_to_json_response(
         retry_count,
         error_message: None,
         upstream_response_body: None,
+        monitor_session: ctx.monitor_session(),
+        trace_id: ctx.trace_id.clone(),
         client_tool: ctx.info.tool,
         client_user_agent: ctx.info.user_agent.clone(),
         client_version: ctx.info.version.clone(),
@@ -1225,6 +1252,8 @@ async fn collect_kiro_to_json_response(
         upstream_effort: None,
         tool_calls,
         headers: ctx.header_log(),
+        net: ctx.net_log(),
+            plugins_applied: ctx.plugins_applied.clone(),
     };
     let _ = log_tx.try_send(entry);
 

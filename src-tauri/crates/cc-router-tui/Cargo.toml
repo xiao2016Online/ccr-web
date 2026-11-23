@@ -1,6 +1,6 @@
 [package]
 name = "cc-router-tui"
-version = "6.7.0"
+version = "7.1.0"
 edition = "2021"
 description = "cc-router 的终端界面"
 license = "MIT"
@@ -35,7 +35,7 @@ tui-big-text = "0.8.10"
 tui-input = "0.15.5"
 unicode-width = "0.2.3"
 # URL 参数的格式校验 (与后端同一份 pattern)。
-regex = "1.13.1"
+regex = "1.13.2"
 
 [dev-dependencies]
 insta = "1.49.0"

@@ -231,6 +231,8 @@ pub fn stream_response(
             retry_count,
             error_message: error_message.clone(),
             upstream_response_body: None,
+            monitor_session: ctx.monitor_session(),
+            trace_id: ctx.trace_id.clone(),
             client_tool: ctx.info.tool,
             client_user_agent: ctx.info.user_agent.clone(),
             client_version: ctx.info.version.clone(),
@@ -243,6 +245,8 @@ pub fn stream_response(
             upstream_effort: None,
             tool_calls: tool_tally.fields(&ctx.tools),
             headers: ctx.header_log(),
+            net: ctx.net_log(),
+            plugins_applied: ctx.plugins_applied.clone(),
         };
         let _ = log_tx.try_send(entry);
     });

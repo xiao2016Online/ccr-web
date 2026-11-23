@@ -71,6 +71,16 @@ export interface CreateKiroSubscriptionInput {
 }
 
 /**
+ * 浏览器 OAuth PKCE 启动结果, 对应 Rust 侧 oauth::chatgpt::BrowserFlowStart.
+ */
+export interface BrowserFlowStart {
+  flow_id: string;
+  authorize_url: string;
+  /** 秒 */
+  expires_in: number;
+}
+
+/**
  * Device Code 启动结果, 对应 Rust 侧 oauth::chatgpt::DeviceFlowStart.
  */
 export interface DeviceFlowStart {
@@ -171,6 +181,8 @@ export interface ProviderInfo {
    */
   translations: Record<"zh-Hant" | "en" | "ja", ProviderText>;
   url_params: UrlParamInfo[];
+  /** 来自厂商插件时的插件信息 (内置厂商没有这个字段) */
+  plugin?: { id: string; version: string; source_kind: PluginSourceKind };
 }
 
 export interface ProviderText {
@@ -313,7 +325,9 @@ export interface BalanceEntry {
 /** 对齐 Rust `BalanceDetail`; 金额为字符串, 标签恒为「余额 (unit)」 */
 export type BalanceDetail =
   | { code: "topup_granted"; topped_up: string; granted: string }
-  | { code: "topup_used"; topped_up: string; used: string };
+  | { code: "topup_used"; topped_up: string; used: string }
+  /** 声明式 `parser: json` (厂商插件等): 只有剩余额度, 可选已用 */
+  | { code: "remaining"; used?: string };
 
 /** 余额快照. 异构 provider 响应在 Rust 翻译后的 UI-ready 结构. */
 export interface BalanceSnapshot {
@@ -351,6 +365,8 @@ export interface SubscriptionDto {
   token_quotas: TokenQuotas;
   /** 每槽位分时段模型规则。后端总是带这个 key (可以是 {})。 */
   slot_schedules: SlotSchedules;
+  /** 包月 / 按量 (计价插件的费用口径; 包月的费用显示为「等价按量费用」) */
+  billing?: Billing;
   /** 各槽位此刻生效的模型 (宿主机时钟求值), 四个 key 总是都在。 */
   slot_models_now: SlotModelsNow;
   /** 四周期用量快照, 固定按 daily/weekly/monthly/total 顺序返回 4 条。 */
@@ -366,7 +382,7 @@ export interface SubscriptionDto {
   created_at: number;
   updated_at: number;
   /** 该订阅被哪些虚拟模型引用 */
-  referenced_by: VirtualModelName[];
+  referenced_by: CustomVirtualModelName[];
   /** 缓存的模型列表（可能为空，fetched_at = Unix ms） */
   model_cache?: {
     fetched_at: number;
@@ -401,6 +417,8 @@ export interface SubscriptionDto {
   provider_names?: LocalizedText;
   provider_icon: string;
   is_user_defined: boolean;
+  /** 厂商描述已更新, 可以「按新描述重建连接」 */
+  connection_outdated?: boolean;
   /** api_key 是否非空 (DTO 不带 Key 本身); 导入时缺 Key 的订阅据此提示「待填写 API Key」 */
   has_api_key: boolean;
 
@@ -520,6 +538,8 @@ export interface SubscriptionPatch {
   url_params?: Record<string, string>;
   /** 自定义订阅: 改连接信息 */
   connection?: ConnectionPatch;
+  /** 包月 / 按量 */
+  billing?: Billing;
 }
 
 export interface TestConnectionResult {
@@ -553,6 +573,22 @@ export type LastErrorCode =
 export type RefreshModelListResult =
   | { kind: "auto"; models: ModelInfo[]; fetched_at: number }
   | { kind: "manual_fallback"; reason: string };
+
+export type CustomVirtualModelName = `model-${string}`;
+
+export interface CustomVirtualModelTarget {
+  subscription_id: string;
+  upstream_model_id: string;
+}
+
+export interface CustomVirtualModelInput {
+  mode: RoutingMode;
+  targets: CustomVirtualModelTarget[];
+}
+
+export interface CustomVirtualModelDto extends CustomVirtualModelInput {
+  name: CustomVirtualModelName;
+}
 
 export interface VirtualModelDto {
   name: VirtualModelName;
@@ -625,6 +661,12 @@ export interface Settings {
   auto_check_updates: boolean;
   /** 上次关闭「更新内容」弹窗时的 app 版本; null = 从没有此功能的老版本升上来。只读, 由 mark_release_notes_seen 写 */
   last_seen_release_notes: string | null;
+  /** 是否开启内置系统桌面通知, 默认 false */
+  desktop_notifications_enabled: boolean;
+  /** 开启系统桌面通知时订阅的事件列表 */
+  desktop_notification_events: string[];
+  /** 每日用量汇总触发时间 (本地时间 HH:MM, 默认 "21:00") */
+  daily_summary_time: string;
 }
 
 export type UpdateSource = "international" | "china";
@@ -653,6 +695,9 @@ export interface SettingsPatch {
   tui_enabled?: boolean;
   receipt_print_animation?: boolean;
   auto_check_updates?: boolean;
+  desktop_notifications_enabled?: boolean;
+  desktop_notification_events?: string[];
+  daily_summary_time?: string;
   // 注意: auth_token 不在 patch 里,必须通过 generateNewToken() 改
 }
 
@@ -742,7 +787,41 @@ export type ClientToolId =
   | "cursor"
   | "opencode"
   | "anthropic-sdk-python"
-  | "anthropic-sdk-js";
+  | "anthropic-sdk-js"
+  | "openai-sdk-python"
+  | "openai-sdk-js"
+  | "python-requests"
+  | "python-httpx"
+  | "axios"
+  | "node-js"
+  | "curl"
+  | "browser"
+  | "go-net-http"
+  | "go-resty"
+  | "rust-ureq"
+  | "rust-reqwest"
+  | "rust-hyper"
+  | "python-urllib"
+  | "python-aiohttp"
+  | "bun"
+  | "deno"
+  | "java-http-client"
+  | "okhttp"
+  | "apache-http-client"
+  | "powershell"
+  | "guzzle"
+  | "faraday"
+  | "httpie"
+  | "wget"
+  | "script-go"
+  | "script-rust"
+  | "script-python"
+  | "script-javascript"
+  | "script-typescript"
+  | "script-java"
+  | "script-dotnet"
+  | "script-php"
+  | "script-ruby";
 
 /**
  * 筛选器 sentinel: 选 "未识别" 时前端发送此值, 后端拼 `client_tool IS NULL`.
@@ -784,7 +863,7 @@ export interface RequestHeaders {
 export interface RequestLogDto {
   id: string;
   timestamp: number;
-  virtual_model_name: VirtualModelName;
+  virtual_model_name: CustomVirtualModelName;
   subscription_id: string;
   provider_id: string;
   endpoint_id: string;
@@ -833,6 +912,94 @@ export interface RequestLogDto {
   tool_use_count?: number | null;
   /** 调用名 JSON 数组字符串, 保序允许重复; 0 次时 null; 超长以 "…" 结尾 */
   tool_use_names?: string | null;
+  /** 与实时路由同形的摘要 (同一套口径) */
+  summary: RequestSummary;
+  /** 网络耗时分段 (proxy/net_timing.rs); 老日志各字段为 null */
+  net: NetTiming;
+  /** 命中的规则插件记录 (JSON 数组); 老日志或未命中为 null */
+  plugins_applied?: string | null;
+}
+
+/** 规则插件对单条请求做过的操作 (`cc_router_plugin_spec::rules_engine::Applied`) */
+export interface AppliedPluginRule {
+  plugin_id: string;
+  version: string;
+  rules: string[];
+  error?: string;
+}
+
+/**
+ * 一次上游尝试的网络耗时 (proxy/net_timing.rs::NetTimingFields), 毫秒都相对本次尝试起点。
+ * dns_ms / connect_ms 只在本次新建连接时有值 (connect = TCP + TLS)。
+ */
+export interface NetTiming {
+  /** 起点 → 交给 HTTP 客户端 (鉴权 / OAuth 刷新 / 协议翻译) */
+  prep_ms: number | null;
+  dns_ms: number | null;
+  connect_ms: number | null;
+  /** 起点 → 收到上游响应头 */
+  headers_ms: number | null;
+  conn_reused: boolean | null;
+  via_proxy: boolean | null;
+  remote_addr: string | null;
+  /** 上游是否流式: 非流式上游要生成完才回响应头 */
+  upstream_stream: boolean | null;
+}
+
+/** get_request_detail: 一条请求 + 同一次入站请求的全部尝试 (按时间正序, 含本条) */
+export interface RequestDetailDto {
+  request: RequestLogDto;
+  attempts: RequestSummary[];
+  /** 按当前价格表估算 (没有计价插件 / 没有匹配价格时没有这个字段) */
+  cost?: CostLine;
+}
+
+export type Billing = "metered" | "flat";
+
+/** 对齐 Rust `plugins::pricing::CostLine`; micros = 该币种的百万分之一 */
+export interface CostLine {
+  currency: "USD" | "CNY";
+  micros: number;
+  /** 包月订阅: 「等价按量费用」, 不是真实花费 */
+  equivalent: boolean;
+  source: PricingSource;
+}
+
+export interface PricingSource {
+  plugin_id: string;
+  version: string;
+}
+
+/** 两种币种分开、真实花费与等价按量费用分开, 不换算不相加 */
+export interface CostTotals {
+  usd_micros: number;
+  cny_micros: number;
+  equiv_usd_micros: number;
+  equiv_cny_micros: number;
+}
+
+export interface CostSummaryDto {
+  has_pricing: boolean;
+  totals: CostTotals;
+  by_subscription: { subscription_id: string; display_name?: string; totals: CostTotals }[];
+  unpriced: { provider_id: string; model: string; requests: number }[];
+  priced_requests: number;
+  total_requests: number;
+  sources: PricingSource[];
+}
+
+export type RequestPurposeFilter = "main" | "agent" | "bg" | "fail";
+
+export interface RequestFacetsDto {
+  purpose: Record<"all" | RequestPurposeFilter, number>;
+  sessions: { client: string | null; id: string; count: number; last_seen: number }[];
+}
+
+export interface RequestNeighborsDto {
+  /** 列表里排在上面 (更新) 的那条 */
+  newer: string | null;
+  /** 列表里排在下面 (更早) 的那条 */
+  older: string | null;
 }
 
 export interface ListRequestsResult {
@@ -841,12 +1008,18 @@ export interface ListRequestsResult {
 }
 
 export interface RequestLogFilters {
-  virtual_model_name?: VirtualModelName;
+  virtual_model_name?: CustomVirtualModelName;
   provider_id?: string;
   status?: RequestStatus;
   subscription_id?: string;
   /** ClientToolId 或 CLIENT_TOOL_UNKNOWN_SENTINEL */
   client_tool?: string;
+  since_ms?: number;
+  purpose?: RequestPurposeFilter;
+  session_id?: string;
+  trace_id?: string;
+  /** 模型名 / 工具名 / 请求 id 前缀 */
+  q?: string;
 }
 
 // ===== 统计聚合 (commands/statistics.rs) =====
@@ -876,6 +1049,43 @@ export interface OverallStatsDto {
   total_tool_use_count: number;
   /** 至少一次工具调用的请求数, 占比分母用 success_count */
   tool_use_request_count: number;
+  /** 等长的上一周期 (今天 → 昨天同一时段); all_time 没有 */
+  previous?: PeriodTotalsDto | null;
+}
+
+/** Rust `PeriodTotalsDto`: 「较上一周期」用的精简汇总, 字段与 OverallStatsDto 同名同义 */
+export interface PeriodTotalsDto {
+  total_requests: number;
+  success_count: number;
+  avg_duration_ms?: number | null;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_creation_tokens: number;
+  total_cache_read_tokens: number;
+  tool_use_request_count: number;
+}
+
+export interface ActivityBucketDto {
+  requests: number;
+  failures: number;
+}
+
+/** Rust `SubscriptionActivityDto`: 近 24 小时, 每小时一桶, 最旧在前 */
+export interface SubscriptionActivityDto {
+  subscription_id: string;
+  buckets: ActivityBucketDto[];
+  requests: number;
+  failures: number;
+}
+
+/** Rust `RequestMixDto`: 只能从 requests 原始表算的分布 (受日志保留期限制) */
+export interface RequestMixDto {
+  /** 原始表里落在范围内的请求数; 与聚合表 total_requests 比得出覆盖率 */
+  covered_requests: number;
+  purposes: { kind: PurposeKind | null; count: number; guessed: number }[];
+  clients: { client_tool: string | null; requests: number; tokens: number }[];
+  /** 成功请求总耗时: <2s / 2–5s / 5–10s / 10–30s / 30–60s / ≥60s */
+  latency_buckets: number[];
 }
 
 export interface DailySeriesPointDto {
@@ -982,6 +1192,8 @@ export interface ReceiptSubItemDto {
   provider_display_name: string;
   real_model_name: string;
   totals: ReceiptTotalsDto;
+  /** 按当前价格表估算 (没有计价插件 / 没有匹配价格时没有) */
+  cost?: CostLine;
 }
 
 export interface ReceiptVirtualModelItemDto {
@@ -1001,6 +1213,8 @@ export interface ReceiptDto {
   /** 4 项 (fable/opus/sonnet/haiku, 顺序固定, 空也返回), 有 Jev 用量时末尾多一项 model-jev */
   items: ReceiptVirtualModelItemDto[];
   grand_total: ReceiptTotalsDto;
+  /** 费用合计; 没有启用的计价插件时没有这个字段 */
+  cost_totals?: CostTotals;
 }
 
 export type EventKind =
@@ -1050,12 +1264,76 @@ export interface QuotaReachedPayload {
 // 路由实时事件(对应 proxy/pipeline.rs 里 emit 的 payload)
 export interface RouteAttemptStartedEvent {
   subscription_id: string;
-  virtual_model: VirtualModelName;
+  virtual_model: CustomVirtualModelName;
+  /** 客户端识别结果; 未识别为 null (老后端没有这个字段) */
+  client_tool?: string | null;
+  purpose?: PurposeKind;
 }
+
+/** 请求用途 (proxy/purpose.rs::PurposeKind) */
+export type PurposeKind =
+  | "main"
+  | "agent"
+  | "compact"
+  | "guard"
+  | "title"
+  | "fetch"
+  | "probe"
+  | "background"
+  | "unknown";
+
+export interface RequestPurpose {
+  kind: PurposeKind;
+  /** true = 靠提示词 / 工具集指纹推断 */
+  guessed: boolean;
+  turn: number | null;
+  step: number | null;
+  /** 本请求回传的是哪些工具的结果 (只有工具名) */
+  prev_tools: string[];
+}
+
+/**
+ * 一条请求的摘要 (observability/live_feed.rs::RequestSummary)。实时路由的事件行与请求日志的列表行同形:
+ * 事件 `live_request`、get_live_requests、list_requests 的 `items[].summary` 都是它。
+ */
+export interface RequestSummary {
+  id: string;
+  timestamp: number;
+  virtual_model: string;
+  subscription_id: string;
+  provider_id: string;
+  model: string;
+  status: "success" | "error" | "timeout";
+  http_status: number | null;
+  ttft_ms: number | null;
+  total_ms: number | null;
+  /** 网络耗时小计 (NetTimingFields::network_ms); 老记录为 null */
+  network_ms: number | null;
+  /** 未命中缓存的输入 (已按协议归一, 不含缓存读写) */
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  client_tool: string | null;
+  effort: string | null;
+  stop_reason: string | null;
+  tool_use_names: string[];
+  tools_offered: number | null;
+  retry_count: number;
+  error: string | null;
+  /** null = 迁移 030 之前写入的老记录, 没有用途信息 */
+  purpose: RequestPurpose | null;
+  session: { client: "claude" | "codex"; id: string } | null;
+  /** 同一次入站请求的所有尝试共用; 老记录为 null */
+  trace_id: string | null;
+}
+
+/** 实时路由沿用的名字 */
+export type LiveRequest = RequestSummary;
 
 export interface RouteAttemptFinishedEvent {
   subscription_id: string;
-  virtual_model: VirtualModelName;
+  virtual_model: CustomVirtualModelName;
   success: boolean;
 }
 
@@ -1169,6 +1447,7 @@ export interface ImportPreview {
   has_secrets: boolean;
   local_subscription_count: number;
   subscriptions: ImportPreviewItem[];
+  custom_model_conflicts: string[];
 }
 
 export interface ImportOptions {
@@ -1183,9 +1462,192 @@ export interface ImportReport {
   skipped_oauth: string[];
   /** 没通过新建订阅校验而跳过的订阅 */
   skipped_invalid: { name: string; reason: string }[];
-  /** 跨类绑定 (对话订阅 ↔ model-jev) 被跳过的记录; 后端为空时省略 */
-  skipped_bindings?: { name: string; reason: string }[];
+  /** 被跳过的路由绑定。旧版后端只返回 reason。 */
+  skipped_bindings?: {
+    name: string;
+    reason: string;
+    custom_binding_issue?:
+      | { kind: "name_conflict" }
+      | { kind: "invalid_target"; subscription_id: string };
+  }[];
   disabled_missing_key: string[];
   token_imported: boolean;
   token_error?: string;
 }
+
+// ===== 插件 (src-tauri/src/plugins/store.rs) =====
+
+export type PluginSourceKind = "github" | "community" | "local";
+
+export interface PluginSource {
+  kind: PluginSourceKind;
+  /** `owner/repo` 或本地文件夹的绝对路径 */
+  location: string;
+  path: string | null;
+  /** 40 位提交号 (GitHub / 社区) */
+  commit: string | null;
+}
+
+export type RuleParamDecl =
+  | { id: string; type: "string"; label: import("@/plugins/manifest").LocalizedText; default?: string; optional?: boolean }
+  | { id: string; type: "number"; label: import("@/plugins/manifest").LocalizedText; default?: number; optional?: boolean }
+  | { id: string; type: "bool"; label: import("@/plugins/manifest").LocalizedText; default?: boolean; optional?: boolean }
+  | { id: string; type: "enum"; values: string[]; label: import("@/plugins/manifest").LocalizedText; default?: string; optional?: boolean }
+  | { id: string; type: "virtual_model"; label: import("@/plugins/manifest").LocalizedText; default?: string; optional?: boolean }
+  | { id: string; type: "base_url"; label: import("@/plugins/manifest").LocalizedText; default?: string; optional?: boolean }
+  | { id: string; type: "secret"; label: import("@/plugins/manifest").LocalizedText; optional?: boolean };
+
+export interface NotifierDeliveryRecord {
+  timestamp_ms: number;
+  event: string;
+  ok: boolean;
+  http_status: number | null;
+  error: string | null;
+}
+
+export interface RuleDryRunCount {
+  rule_id: string;
+  matched: number;
+  unknown: number;
+}
+
+export interface DryRunSample {
+  request_id: string;
+  timestamp_ms: number;
+  virtual_model: string;
+  purpose: string;
+  client_tool: string;
+  status: "matched" | "unknown";
+  matched_rules: string[];
+  unknown_rules: string[];
+  unknown_fields: string[];
+  redirect_to?: string;
+  rejected: boolean;
+}
+
+export interface RulesDryRunResult {
+  total_checked: number;
+  matched_count: number;
+  unknown_count: number;
+  rule_counts: RuleDryRunCount[];
+  samples: DryRunSample[];
+}
+
+export interface InstalledPlugin {
+  id: string;
+  plugin_type: string;
+  version: string;
+  /** 清单原文; 显示前用 src/plugins/manifest.ts 校验 */
+  manifest: unknown;
+  source: PluginSource;
+  sha256: string;
+  installed_at: number;
+  size: number;
+  /** 系统插件 (厂商等) 是否生效; 主题 / 小票恒为 true */
+  enabled: boolean;
+  /** 优先级 (数字越大越先匹配, 用于 pricing / rules) */
+  priority?: number;
+  /** 用户已保存的参数 (非参数化插件为 `{}`; 通知插件不含 secret 明文) */
+  params?: Record<string, unknown>;
+  /** 规则 / 通知插件声明的参数表 */
+  param_decls?: RuleParamDecl[];
+  /** 启用前缺少的必填参数 id */
+  missing_params?: string[];
+  /** 通知插件中已保存值的 secret 参数 id (永不回传明文) */
+  secret_params_set?: string[];
+}
+
+export interface PluginContent {
+  manifest: unknown;
+  entry: string;
+  /** 二进制资源路径 → data URL */
+  assets: Record<string, string>;
+  /** 文本资源 (小票模板 / 样式) 路径 → 原文 */
+  texts: Record<string, string>;
+}
+
+export interface StagedPlugin {
+  staging_id: string;
+  manifest: unknown;
+  entry: string;
+  assets: { path: string; size: number }[];
+  /** 文本资源 (html / css) 原文 */
+  texts: Record<string, string>;
+  total_size: number;
+  sha256: string;
+  source: PluginSource;
+  installed: InstalledPlugin | null;
+  /** 系统插件的 Rust 校验结果; 主题 / 小票没有 (由前端校验) */
+  system?: PluginCheckResult;
+}
+
+/** 对齐 Rust `cc_router_plugin_spec::check::CheckResult` */
+export interface PluginCheckResult {
+  ok: boolean;
+  issues: import("@/plugins/manifest").Issue[];
+  capabilities?: PluginCapabilities;
+  /** 与本机已装版本相比的能力变化 */
+  diff?: PluginCapabilityDiff;
+}
+
+export type PluginCapabilities =
+  | {
+      kind: "provider";
+      auth_type: AuthType;
+      /** 会收到 API Key 的 host, 按字典序 */
+      key_hosts: { host: string; used_for: ("messages" | "models" | "balance")[]; differs_from_messages: boolean }[];
+      endpoints: number;
+    }
+  | {
+      kind: "pricing";
+      currency: "USD" | "CNY";
+      rules: number;
+      /** 覆盖的厂商 id (含 `*`) */
+      providers: string[];
+    }
+  | {
+      kind: "rules";
+      hooks: ("route" | "request")[];
+      actions: string[];
+      /** 写死的虚拟模型短名, 或 `{{params.x}}` */
+      redirects_to: string[];
+      rules: number;
+      params: RuleParamDecl[];
+    }
+  | {
+      kind: "notifier";
+      /** 会连接的固定域名 (或 base_url 默认域名) */
+      hosts: string[];
+      /** 由用户填写服务器地址的 base_url 参数 id */
+      base_url_params: string[];
+      /** 订阅的事件名 */
+      events: string[];
+      /** 模板引用的事件字段 */
+      fields: string[];
+      params: RuleParamDecl[];
+    };
+
+export interface PluginCapabilityDiff {
+  added_hosts: string[];
+  removed_hosts: string[];
+  auth_type_changed: boolean;
+  added_actions?: string[];
+  added_events?: string[];
+  added_fields?: string[];
+}
+
+/** 对齐 Rust `subscription::rebuild::RebuildPreview` */
+export interface RebuildPreview {
+  status: "up_to_date" | "changed" | "blocked";
+  changes: { field: RebuildField; old: string; new: string }[];
+  reason?: "user_defined" | "oauth" | "provider_missing" | "endpoint_missing" | "params_invalid" | "auth_changed" | "protocol_changed";
+}
+
+export type RebuildField =
+  | "base_url"
+  | "messages_path"
+  | "required_headers"
+  | "auth_header"
+  | "forward_headers"
+  | "model_discovery_url"
+  | "balance";

@@ -270,6 +270,7 @@ pub async fn probe_subscription(
             let extras = CodexExtras {
                 reasoning_effort: resolve_reasoning_effort(&body, forced_effort.as_deref(), default_effort.as_deref()),
                 expose_reasoning: expose,
+                prompt_cache_key: None,
             };
             let res = dispatch_oauth_attempt(
                 &state.probe_client,
@@ -375,6 +376,7 @@ pub async fn probe_subscription(
                 expose_reasoning: expose,
                 // 与 pipeline 真实 dispatch 同一方言判定 (探测必须复用真实 dispatch 行为)
                 dialect: detect_responses_dialect(&row.messages_url(), model),
+                prompt_cache_key: None,
             };
             let res = dispatch_openai_responses_attempt(
                 &state.probe_client,
@@ -501,6 +503,26 @@ pub fn pick_test_model_at(
         .first()
         .cloned()
         .map(|m| (m, None))
+}
+
+/// Prefer the established slot probe, then an explicit route target over a provider example.
+pub async fn pick_bound_test_model_at(
+    state: &AppState,
+    row: &SubscriptionRow,
+    at: WallClock,
+) -> Option<(String, Option<SubscriptionSlot>)> {
+    let baseline = pick_test_model_at(row, at);
+    if matches!(baseline, Some((_, Some(_))))
+        || row.endpoint_protocol == crate::provider::model::EndpointProtocol::Systemone
+    {
+        return baseline;
+    }
+    let routes = state.virtual_models.read().await;
+    routes.values()
+        .filter_map(|route| route.upstream_models.get(&row.id).map(|model| (route.name.as_str(), model)))
+        .min_by_key(|(name, _)| *name)
+        .map(|(_, model)| (model.clone(), None))
+        .or(baseline)
 }
 
 #[cfg(test)]

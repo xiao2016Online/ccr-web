@@ -1,6 +1,8 @@
 //! 应用级命令（factory reset 等）。
 
 use crate::state::{AppHandle, State};
+#[cfg(feature = "desktop")]
+use tauri::Manager;
 use tracing::{info, warn};
 
 use crate::error::AppResult;
@@ -26,7 +28,13 @@ pub async fn factory_reset(state: State<'_, AppState>, _app: AppHandle) -> AppRe
         }
     }
 
-    // 3. 删除 DB / settings 文件。桌面从 AppHandle 解析目录, 服务器直接用启动时解析好的 data_dir。
+    // 3a. 清除 Agent 会话监控接入配置 (桌面专属: 只有桌面能接入监控插件)
+    #[cfg(feature = "desktop")]
+    if let Some(monitor) = _app.try_state::<crate::session_monitor::Monitor>() {
+        monitor.clear_opt_in().await;
+    }
+
+    // 3b. 删除 DB / settings 文件。桌面从 AppHandle 解析目录, 服务器直接用启动时解析好的 data_dir。
     #[cfg(feature = "desktop")]
     let app_data_dir = crate::db::paths::app_data_dir(&_app)?;
     #[cfg(not(feature = "desktop"))]

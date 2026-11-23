@@ -14,7 +14,10 @@ pub mod commands;
 pub mod db;
 pub mod error;
 pub mod integrations;
+pub mod notify;
+pub mod session_monitor;
 pub mod oauth;
+pub mod plugins;
 pub mod observability;
 pub mod provider;
 pub mod proxy;
@@ -29,6 +32,10 @@ pub mod subscription;
 pub mod tls;
 #[cfg(feature = "desktop")]
 pub mod tray;
+// 服务器形态没有托盘, 但通知子系统要复用托盘的语言枚举 (纯数据, 无 Tauri 依赖)
+#[cfg(not(feature = "desktop"))]
+#[path = "tray/strings.rs"]
+pub mod tray_strings;
 #[cfg(all(test, feature = "desktop"))]
 mod tui_contract;
 #[cfg(test)]
@@ -119,6 +126,7 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // 日志初始化
             let app_data_dir = app
@@ -127,6 +135,10 @@ pub fn run() {
                 .expect("无法解析 app_data_dir");
             observability::logger::init(&app_data_dir)?;
             info!(?app_data_dir, "cc-router starting");
+
+            app.manage(session_monitor::Monitor::new(app_data_dir.clone()));
+            // 实时路由缓冲随 AppState 一起构造 (两形态同一份, 见 bootstrap_core)
+            session_monitor::Monitor::start(app.handle().clone());
 
             // 窗口几何自适应 —— 必须先于 bootstrap: 几何计算是同步且极快的, 而
             // bootstrap 要跑 DB migration / provider 加载 / TLS。配合
@@ -155,16 +167,25 @@ pub fn run() {
             if let Err(e) = tray::setup(app, tray::TrayLocale::from_pref(&lang_pref)) {
                 error!(?e, "tray setup failed");
             }
+            // 系统桌面通知点击回调 (唤回主窗口并跳到事件对应的页面)
+            notify::setup_desktop_click_handler(app.handle());
 
             Ok(())
         })
         .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
+            session_monitor::get_live_sessions,
+            session_monitor::session_monitor_status,
+            session_monitor::session_monitor_client_version,
+            session_monitor::configure_session_monitor,
             commands::providers::list_providers,
             commands::subscriptions::list_subscriptions,
             commands::subscriptions::get_subscription,
             commands::subscriptions::create_subscription,
+            commands::subscriptions::clone_subscription,
             commands::subscriptions::update_subscription,
+            commands::subscriptions::preview_subscription_rebuild,
+            commands::subscriptions::rebuild_subscription_connection,
             commands::subscriptions::update_subscription_key,
             commands::subscriptions::delete_subscription,
             commands::subscriptions::set_subscription_enabled,
@@ -177,20 +198,32 @@ pub fn run() {
             commands::subscriptions::get_host_clock,
             commands::subscriptions::reset_total_quota_usage,
             commands::virtual_models::list_virtual_models,
+            commands::virtual_models::list_custom_virtual_models,
+            commands::virtual_models::create_custom_virtual_model,
+            commands::virtual_models::update_custom_virtual_model,
+            commands::virtual_models::delete_custom_virtual_model,
             commands::virtual_models::update_virtual_model,
             commands::requests::list_requests,
             commands::requests::get_request_headers,
+            commands::requests::get_request_detail,
+            commands::requests::list_session_requests,
+            commands::requests::get_request_facets,
+            commands::requests::get_request_neighbors,
             commands::header_preview::preview_outbound_headers,
             commands::requests::export_requests_csv,
             commands::requests::export_requests_csv_text,
             commands::requests::list_supported_client_tools,
             commands::requests::get_client_activity,
+            observability::live_feed::get_live_requests,
             commands::statistics::get_overall_stats,
+            commands::statistics::get_cost_summary,
             commands::statistics::get_daily_series,
             commands::statistics::get_breakdown,
             commands::statistics::get_token_heatmap,
             commands::statistics::get_tool_breakdown,
             commands::statistics::get_token_rates,
+            commands::statistics::get_subscription_activity,
+            commands::statistics::get_request_mix,
             commands::receipts::get_receipt_summary,
             commands::events::list_events,
             commands::settings::get_settings,
@@ -217,6 +250,9 @@ pub fn run() {
             commands::updater::download_install_update,
             commands::debug::open_debug_dump_dir,
             commands::debug::clear_debug_dumps,
+            commands::oauth::start_chatgpt_browser_flow,
+            commands::oauth::poll_chatgpt_browser_flow,
+            commands::oauth::cancel_chatgpt_browser_flow,
             commands::oauth::start_chatgpt_device_flow,
             commands::oauth::poll_chatgpt_device_code,
             commands::oauth::create_chatgpt_oauth_subscription,
@@ -234,6 +270,22 @@ pub fn run() {
             commands::tls::tls_export_ca_zip,
             commands::tls::tls_get_ca_zip_bytes,
             commands::tls::tls_regenerate_leaf,
+            commands::plugins::list_plugins,
+            commands::plugins::load_plugin,
+            commands::plugins::stage_plugin_from_github,
+            commands::plugins::stage_plugin_from_dir,
+            commands::plugins::install_staged_plugin,
+            commands::plugins::discard_staged_plugin,
+            commands::plugins::uninstall_plugin,
+            commands::plugins::enable_plugin,
+            commands::plugins::disable_plugin,
+            commands::plugins::set_plugin_params,
+            commands::plugins::test_notifier_plugin,
+            commands::plugins::list_notifier_deliveries,
+            commands::plugins::test_desktop_notification,
+            commands::plugins::reorder_plugins,
+            commands::plugins::dry_run_rules_plugin,
+            commands::plugins::fetch_community_index,
             commands::tui::tui_launch_info,
             commands::tui::install_tui_command,
             commands::tui::uninstall_tui_command,
@@ -335,6 +387,7 @@ async fn bootstrap_core(
 
     let chatgpt_oauth = Arc::new(oauth::chatgpt::ChatGptOAuthManager::new(pool.clone()));
     let kiro_oauth = Arc::new(oauth::kiro::KiroOAuthManager::new(pool.clone()));
+    let (notify_hub, notify_rx) = notify::NotifyHub::new();
 
     // SSE 事件广播先于 AppHandle 构造: 服务器形态的 AppHandle 直接持有广播发送端。
     let (ui_tx, _) = tokio::sync::broadcast::channel(proxy::web::events::UI_EVENT_CAPACITY);
@@ -346,8 +399,14 @@ async fn bootstrap_core(
     let state = AppState {
         data_dir: app_data_dir,
         db: pool,
-        providers: Arc::new(providers),
+        providers: Arc::new(std::sync::RwLock::new(Arc::new(provider::registry::ProviderRegistry::builtin(providers)))),
+        pricing: Default::default(),
+        rules: Default::default(),
+        notifiers: Default::default(),
+        notify: notify_hub,
+        live_feed: Arc::new(observability::live_feed::LiveFeed::default()),
         subscriptions: subscriptions_arc,
+        route_edits: Default::default(),
         virtual_models: Arc::new(RwLock::new(virtual_models)),
         settings: Arc::new(RwLock::new(settings)),
         http_bound_port: Arc::new(RwLock::new(None)),
@@ -380,6 +439,9 @@ async fn bootstrap_core(
     // 服务器形态没有 Tauri 事件层: emit 已经直接进广播, 无需桥。
     #[cfg(feature = "desktop")]
     proxy::web::events::install_bridge(&state.app_handle, state.ui_events.clone());
+    // 服务器形态: 把状态挂回 AppHandle, 让共享代码里的 `app.try_state::<AppState>()` 可用
+    #[cfg(not(feature = "desktop"))]
+    state.app_handle.attach_state(state.clone());
 
     // 6. 日志 / 事件 consumer (在 state 建好之后起, 它们要拿 app_handle 发界面事件)
     let event_pool = state.db.clone();
@@ -401,6 +463,18 @@ async fn bootstrap_core(
             log_event_tx,
         )
         .await;
+    });
+
+    // 7b. 系统插件进运行时 (厂商注册表 + 计价注册表; 要在代理启动前: 插件厂商订阅的请求会读注册表)。
+    // 失败不 fatal, 只是没有插件厂商 / 没有价格。
+    if let Err(e) = plugins::runtime::rebuild_runtime(&state).await {
+        tracing::warn!(error = %e, "加载系统插件失败");
+    }
+
+    // 7c. 通知后台消费端 (通知插件 + 内置桌面通知 + 每日汇总定时器)
+    let notify_state = state.clone();
+    spawn_task(async move {
+        notify::run_worker(notify_state, notify_rx).await;
     });
 
     // 8. 启动代理. 失败不 fatal: 界面显示「未运行」与原因, 用户可点「启动代理服务」重试.

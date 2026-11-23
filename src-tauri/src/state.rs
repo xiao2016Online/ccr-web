@@ -10,7 +10,7 @@ use crate::oauth::kiro::KiroOAuthManager;
 use crate::observability::body_dump::BodyDumpEntry;
 use crate::observability::events::EventEntry;
 use crate::observability::request_log::RequestLogEntry;
-use crate::provider::model::Provider;
+use crate::provider::registry::ProviderRegistry;
 use crate::proxy::web::auth::{LoginGuard, SessionStore};
 use crate::proxy::web::events::UiEvent;
 use crate::settings::model::Settings;
@@ -39,12 +39,29 @@ pub type AppHandle = tauri::AppHandle;
 #[derive(Clone)]
 pub struct AppHandle {
     ui_events: tokio::sync::broadcast::Sender<UiEvent>,
+    /// 启动完成后挂上的全局状态。上游 v7 的部分共享代码写 `app.try_state::<AppState>()`
+    /// (桌面走 Tauri 的 Manager), 这里给出同形入口, 免得每个调用点都写 cfg。
+    state_slot: Arc<std::sync::OnceLock<AppState>>,
 }
 
 #[cfg(not(feature = "desktop"))]
 impl AppHandle {
     pub fn new(ui_events: tokio::sync::broadcast::Sender<UiEvent>) -> Self {
-        Self { ui_events }
+        Self {
+            ui_events,
+            state_slot: Arc::new(std::sync::OnceLock::new()),
+        }
+    }
+
+    /// 启动序列构造出 AppState 后调用一次 (重复调用忽略)。
+    pub fn attach_state(&self, state: AppState) {
+        let _ = self.state_slot.set(state);
+    }
+
+    /// 与 `tauri::Manager::try_state` 同形: 服务器形态只装了 AppState。
+    pub fn try_state<T: 'static>(&self) -> Option<&T> {
+        let state = self.state_slot.get()?;
+        (state as &dyn std::any::Any).downcast_ref::<T>()
     }
 
     /// 与桌面 `tauri::Emitter::emit` 同形的事件发射口: payload 序列化后写进
@@ -78,8 +95,21 @@ pub struct AppState {
     /// 桌面 = OS app data dir;服务器 = CCR_DATA_DIR (或其缺省值), 启动时解析一次。
     pub data_dir: PathBuf,
     pub db: sqlx::SqlitePool,
-    pub providers: Arc<HashMap<String, Provider>>,
+    /// 厂商注册表 (内置 + 厂商插件)。读用 [`AppState::providers`], 装 / 卸 / 启停插件时整体替换。
+    pub providers: Arc<std::sync::RwLock<Arc<ProviderRegistry>>>,
+    /// 计价注册表 (已启用的计价插件)。读用 [`AppState::pricing`], 与厂商注册表同时重建。
+    pub pricing: Arc<std::sync::RwLock<Arc<crate::plugins::pricing::PricingRegistry>>>,
+    /// 规则注册表 (已启用的规则插件 + 已解析参数)。读用 [`AppState::rules`], 与厂商 / 计价注册表同时重建。
+    pub rules: Arc<std::sync::RwLock<Arc<crate::plugins::rules::RulesRegistry>>>,
+    /// 通知插件注册表 (已启用的通知插件 + 已解析参数)。读用 [`AppState::notifiers`], 随 `rebuild_runtime` 重建。
+    pub notifiers: Arc<std::sync::RwLock<Arc<crate::plugins::notifier::NotifierRegistry>>>,
+    /// 通知投递中心 (通知插件 + 内置桌面通知共用去重、限流与内存发送记录)。
+    pub notify: Arc<crate::notify::NotifyHub>,
+    /// 实时路由的内存环形缓冲 (请求日志消费端写入, 实时路由首屏与 SSE 读取)。
+    pub live_feed: Arc<crate::observability::live_feed::LiveFeed>,
     pub subscriptions: Arc<RwLock<HashMap<Uuid, Arc<RwLock<SubscriptionRuntime>>>>>,
+    /// Serializes route writes, subscription removal, and backup imports across SQLite and memory.
+    pub route_edits: Arc<tokio::sync::Mutex<()>>,
     pub virtual_models: Arc<RwLock<HashMap<VirtualModelName, VirtualModelConfig>>>,
     pub settings: Arc<RwLock<Settings>>,
     /// HTTP listener 实际绑定到的端口. None=HTTP listener 未启用 (HTTPS-only 模式).
@@ -117,6 +147,43 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// 当前厂商注册表的快照。
+    pub fn providers(&self) -> Arc<ProviderRegistry> {
+        self.providers.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// 当前计价注册表的快照 (空 = 没有启用的计价插件, 界面不显示任何费用)。
+    pub fn pricing(&self) -> Arc<crate::plugins::pricing::PricingRegistry> {
+        self.pricing.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn set_pricing(&self, registry: crate::plugins::pricing::PricingRegistry) {
+        *self.pricing.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(registry);
+    }
+
+    /// 当前规则注册表的快照 (空 = 没有启用的规则插件)。
+    pub fn rules(&self) -> Arc<crate::plugins::rules::RulesRegistry> {
+        self.rules.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn set_rules(&self, registry: crate::plugins::rules::RulesRegistry) {
+        *self.rules.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(registry);
+    }
+
+    /// 当前通知插件注册表的快照。
+    pub fn notifiers(&self) -> Arc<crate::plugins::notifier::NotifierRegistry> {
+        self.notifiers.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn set_notifiers(&self, registry: crate::plugins::notifier::NotifierRegistry) {
+        *self.notifiers.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(registry);
+    }
+
+    /// 整体替换厂商注册表 (装 / 卸 / 启停厂商插件后)。
+    pub fn set_providers(&self, registry: ProviderRegistry) {
+        *self.providers.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(registry);
+    }
+
     pub async fn get_subscription(
         &self,
         id: &Uuid,

@@ -312,6 +312,8 @@ function entryText(entry: BalanceEntry, t: TFunction): { label: string; hint?: s
           used: money(d.used),
         }),
       };
+    case "remaining":
+      return { label, hint: d.used ? t("subscriptionBalance.entry.used", { used: money(d.used) }) : undefined };
   }
 }
 

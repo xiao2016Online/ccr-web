@@ -88,13 +88,51 @@ pub async fn handle(state: &AppState, client_headers: HeaderMap, body: Bytes) ->
     let Some(model) = parsed.get("model").and_then(|v| v.as_str()).map(str::to_string) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid_request_error", "缺少 model 字段");
     };
-    let vm = VirtualModelName::parse(&model).unwrap_or(VirtualModelName::Fallback);
-    if vm.is_jev() {
+    let mut vm_config = {
+        let models = state.virtual_models.read().await;
+        let Some(config) = crate::virtual_model::model::VirtualModelConfig::resolve(&models, &model) else {
+            return not_available();
+        };
+        config.clone()
+    };
+    if vm_config.name.is_jev() {
         return not_available();
     }
-    let Some(vm_config) = state.virtual_models.read().await.get(&vm).cloned() else {
-        return not_available();
-    };
+    // 规则插件: count_tokens 只跑 route 钩子, 与真实请求的改道结果保持一致 (设计 §6.2)。
+    {
+        let rules = state.rules();
+        if !rules.is_empty() {
+            let info = crate::proxy::client_fingerprint::identify(&client_headers);
+            let shape = crate::proxy::tool_log::request_tool_shape(&parsed).with_purpose(&parsed, info.tool);
+            let (weekday, minute) = crate::plugins::rules::local_weekday_minute();
+            let facts = cc_router_plugin_spec::rules_engine::Facts {
+                purpose: shape.purpose.kind.as_str(),
+                purpose_guessed: shape.purpose.guessed,
+                virtual_model: crate::plugins::rules::vm_short_name(&vm_config.name),
+                client_tool: info.tool.unwrap_or("unknown"),
+                entry: "messages",
+                model: &model,
+                weekday,
+                minute,
+            };
+            let (decision, _) = rules.apply_route(&facts, &parsed);
+            match decision {
+                cc_router_plugin_spec::rules_engine::RouteDecision::Reject(msg) => {
+                    return error_response(StatusCode::BAD_REQUEST, "invalid_request_error", &msg);
+                }
+                cc_router_plugin_spec::rules_engine::RouteDecision::UseVirtualModel(short) => {
+                    if let Some(target_vm) = crate::plugins::rules::vm_from_short_name(&short) {
+                        let models = state.virtual_models.read().await;
+                        if let Some(cfg) = models.get(&target_vm) {
+                            vm_config = cfg.clone();
+                        }
+                    }
+                }
+                cc_router_plugin_spec::rules_engine::RouteDecision::Continue => {}
+            }
+        }
+    }
+    let vm = &vm_config.name;
     let clock = WallClock::now();
     let subs = state.subscriptions.read().await.clone();
     let order = build_candidate_order(&vm_config, &subs, Utc::now(), clock, None).await;
@@ -103,9 +141,12 @@ pub async fn handle(state: &AppState, client_headers: HeaderMap, body: Bytes) ->
         let Some(rt) = subs.get(&sub_id) else { continue };
         let (target, row) = {
             let g = rt.read().await;
-            (target_for(&g.row, vm, clock), g.row.clone())
+            (target_for(&g.row, vm.clone(), clock), g.row.clone())
         };
-        let Some(target) = target else { continue };
+        let Some(mut target) = target else { continue };
+        if let Some(upstream) = vm_config.upstream_models.get(&sub_id) {
+            target.model = Some(upstream.clone());
+        }
         if let Some(m) = &target.model {
             parsed["model"] = Value::String(m.clone());
         }

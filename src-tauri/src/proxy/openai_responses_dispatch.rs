@@ -189,8 +189,8 @@ pub async fn dispatch_openai_responses_attempt(
 
     // 4. 发送请求
     capture.request = crate::proxy::header_log::capture_untagged(&headers, log_headers, &[api_key.as_str()]);
-    let send_result =
-        upstream::send(http_client, &url, body_bytes, headers, client_wants_streaming).await;
+    let (send_result, net) = upstream::send_timed(http_client, &url, body_bytes, headers, client_wants_streaming).await;
+    capture.net = Some(net);
     let upstream_response = match send_result {
         Ok(r) => {
             capture.response = crate::proxy::header_log::serialize(r.headers(), log_headers);
@@ -489,6 +489,8 @@ fn finalize_streaming(
             retry_count,
             error_message: upstream_error.clone(),
             upstream_response_body: None,
+            monitor_session: ctx.monitor_session(),
+            trace_id: ctx.trace_id.clone(),
             client_tool: ctx.info.tool,
             client_user_agent: ctx.info.user_agent.clone(),
             client_version: ctx.info.version.clone(),
@@ -501,6 +503,8 @@ fn finalize_streaming(
             upstream_effort: upstream_effort_echo,
             tool_calls: tool_tally.fields(&ctx.tools),
             headers: ctx.header_log(),
+            net: ctx.net_log(),
+            plugins_applied: ctx.plugins_applied.clone(),
         };
         let _ = log_tx.try_send(entry);
     });
@@ -635,6 +639,8 @@ fn finalize_non_streaming(
             retry_count,
             error_message: None,
             upstream_response_body: None,
+            monitor_session: ctx.monitor_session(),
+            trace_id: ctx.trace_id.clone(),
             client_tool: ctx.info.tool,
             client_user_agent: ctx.info.user_agent.clone(),
             client_version: ctx.info.version.clone(),
@@ -647,6 +653,8 @@ fn finalize_non_streaming(
             upstream_effort: upstream_effort_echo.clone(),
             tool_calls,
             headers: ctx.header_log(),
+            net: ctx.net_log(),
+            plugins_applied: ctx.plugins_applied.clone(),
         };
         let _ = log_tx.try_send(entry);
     });
@@ -711,6 +719,7 @@ mod tests {
                 reasoning_effort: None,
                 expose_reasoning: true,
                 dialect: Default::default(),
+                prompt_cache_key: None,
             },
             &mut crate::proxy::header_log::UpstreamHeaderCapture::default(), // 本测试不关心采集
             false,
@@ -722,7 +731,7 @@ mod tests {
     }
 
     fn responses_extras() -> OpenAiResponsesExtras {
-        OpenAiResponsesExtras { reasoning_effort: None, expose_reasoning: true, dialect: Default::default() }
+        OpenAiResponsesExtras { reasoning_effort: None, expose_reasoning: true, dialect: Default::default(), prompt_cache_key: None }
     }
 
     fn hi_body() -> serde_json::Value {
@@ -838,6 +847,7 @@ mod tests {
                 reasoning_effort: None,
                 expose_reasoning: true,
                 dialect: Default::default(),
+                prompt_cache_key: None,
             },
             &mut crate::proxy::header_log::UpstreamHeaderCapture::default(), // 本测试不关心采集
             false,
@@ -895,6 +905,7 @@ mod tests {
                 reasoning_effort: None,
                 expose_reasoning: true,
                 dialect: Default::default(),
+                prompt_cache_key: None,
             },
             &mut crate::proxy::header_log::UpstreamHeaderCapture::default(), // 本测试不关心采集
             false,

@@ -410,6 +410,7 @@ fn overall_stats_match() {
         total_cache_read_tokens: 4000,
         total_tool_use_count: 7,
         tool_use_request_count: 5,
+        previous: None,
     };
     let view: dto::OverallStats = through_json(&real);
     assert_eq!((view.total_requests, view.success_rate_pct, view.total_tokens()), (1284, 98.6, 4321));
@@ -599,6 +600,10 @@ fn route_attempt_payloads_match() {
     let finished_view: dto::RouteAttempt = through_json(&finished);
     assert_eq!(finished_view.virtual_model, "model-sonnet");
     assert_eq!(finished_view.success, Some(true));
+
+    let custom = VirtualModelName::custom("model-hy4").unwrap();
+    let custom_view: dto::RouteAttempt = through_json(&route_attempt_payload(id, custom, Some(true)));
+    assert_eq!(custom_view.virtual_model, "model-hy4");
 }
 
 /// `RequestLogDto` 全部字段为 `Some` 时, `dto::RequestLog` 逐字段接住。
@@ -618,7 +623,6 @@ fn request_log_matches() {
         http_status: Some(200),
         total_latency_ms: Some(1234),
         first_content_ms: Some(234),
-        output_tokens_per_second: Some(50.0),
         input_tokens: Some(10),
         output_tokens: Some(20),
         cache_creation_tokens: Some(30),
@@ -640,6 +644,18 @@ fn request_log_matches() {
         tool_result_count: Some(1),
         tool_use_count: Some(2),
         tool_use_names: Some(r#"["Read","Edit"]"#.into()),
+        summary: crate::observability::live_feed::sample_summary("x"),
+        net: crate::proxy::net_timing::NetTimingFields {
+            prep_ms: Some(5),
+            dns_ms: Some(30),
+            connect_ms: Some(180),
+            headers_ms: Some(400),
+            conn_reused: Some(false),
+            via_proxy: Some(true),
+            remote_addr: Some("1.2.3.4:443".into()),
+            upstream_stream: Some(true),
+        },
+        plugins_applied: Some(r#"[{"plugin_id":"demo","version":"1.0.0","rules":["r1"]}]"#.into()),
     };
     let view: dto::RequestLog = through_json(&real);
     assert_eq!(
@@ -678,6 +694,16 @@ fn request_log_matches() {
             tool_result_count: Some(1),
             tool_use_count: Some(2),
             tool_use_names: Some(r#"["Read","Edit"]"#.into()),
+            net: dto::NetTiming {
+                prep_ms: Some(5),
+                dns_ms: Some(30),
+                connect_ms: Some(180),
+                headers_ms: Some(400),
+                conn_reused: Some(false),
+                via_proxy: Some(true),
+                remote_addr: Some("1.2.3.4:443".into()),
+                upstream_stream: Some(true),
+            },
         }
     );
 
@@ -696,7 +722,6 @@ fn request_log_matches() {
         http_status: None,
         total_latency_ms: None,
         first_content_ms: None,
-        output_tokens_per_second: None,
         input_tokens: None,
         output_tokens: None,
         cache_creation_tokens: None,
@@ -718,6 +743,9 @@ fn request_log_matches() {
         tool_result_count: None,
         tool_use_count: None,
         tool_use_names: None,
+        summary: crate::observability::live_feed::sample_summary("x"),
+        net: crate::proxy::net_timing::NetTimingFields::none(),
+        plugins_applied: None,
     };
     let view: dto::RequestLog = through_json(&sparse);
     assert_eq!(
@@ -756,6 +784,7 @@ fn request_log_matches() {
             tool_result_count: None,
             tool_use_count: None,
             tool_use_names: None,
+            net: dto::NetTiming::default(),
         }
     );
 }
@@ -778,7 +807,6 @@ fn list_requests_result_matches() {
             http_status: None,
             total_latency_ms: None,
             first_content_ms: None,
-            output_tokens_per_second: None,
             input_tokens: None,
             output_tokens: None,
             cache_creation_tokens: None,
@@ -800,6 +828,9 @@ fn list_requests_result_matches() {
             tool_result_count: None,
             tool_use_count: None,
             tool_use_names: None,
+            summary: crate::observability::live_feed::sample_summary("x"),
+            net: crate::proxy::net_timing::NetTimingFields::none(),
+            plugins_applied: None,
         }],
         total: 42,
     };

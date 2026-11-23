@@ -100,6 +100,9 @@ pub struct ReceiptSubItemDto {
     pub provider_display_name: String,
     pub real_model_name: String,
     pub totals: ReceiptTotalsDto,
+    /// 按当前价格表估算的费用 (没有计价插件 / 没有匹配的价格 → None)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost: Option<crate::plugins::pricing::CostLine>,
 }
 
 #[derive(Debug, Serialize)]
@@ -123,6 +126,9 @@ pub struct ReceiptDto {
     /// 4 项 (fable/opus/sonnet/haiku, 顺序固定, 空也返回), 有 Jev 用量时末尾多一项 model-jev
     pub items: Vec<ReceiptVirtualModelItemDto>,
     pub grand_total: ReceiptTotalsDto,
+    /// 费用合计; None = 没有启用的计价插件 (界面不显示任何费用)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_totals: Option<crate::plugins::pricing::CostTotals>,
 }
 
 /// 固定排序: fable → opus → sonnet → haiku → jev (与前端 virtualModels.ts::VM_ORDER 一致),
@@ -138,6 +144,19 @@ const RECEIPT_VM_ORDER: [VirtualModelName; 5] = [
 /// 四档主消费项空也返回 (版式固定); jev 只在有用量时出现, 不用 Jev 的人看不到空行。
 fn receipt_item_visible(vm: VirtualModelName, has_items: bool) -> bool {
     has_items || !vm.is_jev()
+}
+
+/// SQL 的 `COALESCE(订阅快照名, provider_id)` 在订阅已删时退到 id; 插件厂商的 id 是 `plugin:<id>`,
+/// 不能直接上屏: 插件还装着就用它的中文名, 否则显示「<id>（已卸载的插件）」。小票刻意读中文 (见 CLAUDE.md)。
+fn display_name_or_plugin_fallback(name: String, registry: &crate::provider::registry::ProviderRegistry) -> String {
+    use crate::provider::registry::PLUGIN_PROVIDER_PREFIX;
+    match name.strip_prefix(PLUGIN_PROVIDER_PREFIX) {
+        Some(plugin_id) => registry
+            .get(&name)
+            .map(|p| p.display_name.zh.clone())
+            .unwrap_or_else(|| format!("{plugin_id}（已卸载的插件）")),
+        None => name,
+    }
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -204,6 +223,9 @@ pub async fn get_receipt_summary(
     let mut buckets: std::collections::HashMap<String, Vec<ReceiptSubItemDto>> =
         std::collections::HashMap::new();
 
+    let registry = state.providers();
+    let pricing = state.pricing();
+    let contexts = crate::plugins::pricing::subscription_contexts(&state).await;
     for r in rows {
         let totals = ReceiptTotalsDto {
             request_count: r.try_get("request_count")?,
@@ -212,13 +234,32 @@ pub async fn get_receipt_summary(
             cache_creation_tokens: r.try_get("cache_creation_tokens")?,
             cache_read_tokens: r.try_get("cache_read_tokens")?,
         };
+        let subscription_id: String = r.try_get("subscription_id")?;
+        let provider_id: String = r.try_get("provider_id")?;
+        let real_model_name: String = r.try_get("real_model_name")?;
+        let (auth_type, billing) = contexts.get(&subscription_id).copied().unzip();
+        let n = |v: i64| v.max(0) as u64;
+        let cost = crate::plugins::pricing::cost_of(
+            &pricing,
+            &provider_id,
+            &real_model_name,
+            auth_type,
+            billing.unwrap_or_default(),
+            crate::plugins::pricing::Tokens {
+                input_raw: n(totals.input_tokens),
+                output: n(totals.output_tokens),
+                cache_read: n(totals.cache_read_tokens),
+                cache_write: n(totals.cache_creation_tokens),
+            },
+        );
         let sub_item = ReceiptSubItemDto {
-            subscription_id: r.try_get("subscription_id")?,
+            subscription_id,
             subscription_display_name: r.try_get("subscription_display_name")?,
-            provider_id: r.try_get("provider_id")?,
-            provider_display_name: r.try_get("provider_display_name")?,
-            real_model_name: r.try_get("real_model_name")?,
+            provider_id,
+            provider_display_name: display_name_or_plugin_fallback(r.try_get("provider_display_name")?, &registry),
+            real_model_name,
             totals,
+            cost,
         };
         let vm: String = r.try_get("virtual_model_name")?;
         buckets.entry(vm).or_default().push(sub_item);
@@ -226,10 +267,11 @@ pub async fn get_receipt_summary(
 
     let mut items = Vec::with_capacity(RECEIPT_VM_ORDER.len());
     let mut grand_total = ReceiptTotalsDto::default();
+    let mut cost_totals = crate::plugins::pricing::CostTotals::default();
 
     for vm in RECEIPT_VM_ORDER {
         let mut sub_items = buckets.remove(vm.as_str()).unwrap_or_default();
-        if !receipt_item_visible(vm, !sub_items.is_empty()) {
+        if !receipt_item_visible(vm.clone(), !sub_items.is_empty()) {
             continue;
         }
         // sub_items 内按 request_count 降序, 让用得多的订阅排前面 (小票阅读视角)
@@ -238,6 +280,9 @@ pub async fn get_receipt_summary(
         let mut subtotal = ReceiptTotalsDto::default();
         for s in &sub_items {
             subtotal.add(&s.totals);
+            if let Some(c) = &s.cost {
+                cost_totals.add(c);
+            }
         }
         grand_total.add(&subtotal);
 
@@ -258,6 +303,7 @@ pub async fn get_receipt_summary(
         slip_no,
         items,
         grand_total,
+        cost_totals: (!pricing.is_empty()).then_some(cost_totals),
     })
 }
 
@@ -376,5 +422,17 @@ mod tests {
         assert!(!receipt_item_visible(VirtualModelName::Jev, false));
         assert!(receipt_item_visible(VirtualModelName::Jev, true));
         assert!(receipt_item_visible(VirtualModelName::Haiku, false), "四档主消费项空也返回");
+    }
+}
+
+#[cfg(test)]
+mod plugin_name_tests {
+    use super::*;
+
+    #[test]
+    fn plugin_ids_never_reach_the_receipt_raw() {
+        let reg = crate::provider::registry::ProviderRegistry::default();
+        assert_eq!(display_name_or_plugin_fallback("DeepSeek".into(), &reg), "DeepSeek");
+        assert_eq!(display_name_or_plugin_fallback("plugin:relay".into(), &reg), "relay（已卸载的插件）");
     }
 }

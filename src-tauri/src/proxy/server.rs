@@ -47,6 +47,12 @@ impl ProxyHooks for AppHooks {
             }
             crate::tray::refresh(&self.0.app_handle);
         }
+        // 代理异常停止的通知 (通知插件在服务器形态同样可用)
+        if ports.is_none() {
+            if let Some(reason) = self.0.proxy.snapshot().last_error {
+                self.0.notify.emit(crate::notify::NotifyEvent::ProxyStopped { reason });
+            }
+        }
         let _ = self.0.app_handle.emit("proxy_restarted", ());
     }
 }

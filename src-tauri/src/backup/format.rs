@@ -18,7 +18,7 @@ use crate::virtual_model::model::{RoutingMode, VirtualModelName};
 
 pub const FORMAT: &str = "cc-router-export";
 /// Bump only on incompatible changes; additive optional fields keep the version.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 pub const FIELD_API_KEY: &str = "api_key";
 
 pub fn header_field(name: &str) -> String {
@@ -51,6 +51,9 @@ pub struct ExportSubscription {
     pub slot_efforts: SlotEfforts,
     #[serde(default)]
     pub slot_schedules: SlotSchedules,
+    /// 包月 / 按量; 老文件没有 = 按量
+    #[serde(default)]
+    pub billing: crate::subscription::model::Billing,
     #[serde(default)]
     pub token_quotas: TokenQuotas,
     pub enabled: bool,
@@ -135,6 +138,8 @@ pub struct ExportVirtualModel {
     pub mode: RoutingMode,
     #[serde(default)]
     pub subscription_ids: Vec<Uuid>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub upstream_models: BTreeMap<Uuid, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,6 +235,7 @@ pub fn subscription_to_export(row: &SubscriptionRow) -> (ExportSubscription, Ext
         model_slots,
         slot_efforts,
         slot_schedules,
+        billing,
         token_quotas,
         enabled,
         is_auth_failed: _, // runtime state
@@ -274,6 +280,7 @@ pub fn subscription_to_export(row: &SubscriptionRow) -> (ExportSubscription, Ext
         model_slots: model_slots.clone(),
         slot_efforts: slot_efforts.clone(),
         slot_schedules: slot_schedules.clone(),
+        billing: *billing,
         token_quotas: token_quotas.clone(),
         enabled: *enabled,
         created_at: *created_at,
@@ -333,6 +340,7 @@ pub fn export_to_row(
         model_slots: sub.model_slots.clone(),
         slot_efforts: sub.slot_efforts.clone(),
         slot_schedules: sub.slot_schedules.clone(),
+        billing: sub.billing,
         token_quotas: sub.token_quotas.clone(),
         enabled,
         is_auth_failed: false,
@@ -404,7 +412,7 @@ pub fn parse_file(text: &str) -> crate::error::AppResult<ExportFile> {
         return Err(AppError::BadRequest("文件里有重复的订阅 id".into()));
     }
     let mut names = HashSet::new();
-    if !file.virtual_models.iter().all(|v| names.insert(v.name)) {
+    if !file.virtual_models.iter().all(|v| names.insert(&v.name)) {
         return Err(AppError::BadRequest("文件里有重复的虚拟模型".into()));
     }
     Ok(file)
@@ -436,6 +444,7 @@ mod tests {
             url: "https://bal.example/balance".into(),
             method: BalanceHttpMethod::Get,
             parser: BalanceParser::Deepseek,
+            json: None,
             cache_ttl_minutes: 10,
         };
         assert_eq!(
@@ -463,6 +472,7 @@ mod tests {
             url: "https://a.example/user/balance".into(),
             method: BalanceHttpMethod::Get,
             parser: BalanceParser::Deepseek,
+            json: None,
             cache_ttl_minutes: 10,
         };
         assert_eq!(
