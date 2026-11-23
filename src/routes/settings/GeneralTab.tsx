@@ -15,9 +15,6 @@ import { useTheme, type ColorMode } from "@/hooks/useTheme";
 import { useUiZoom } from "@/hooks/useUiZoom";
 import { DEFAULT_UI_ZOOM, UI_ZOOM_OPTIONS, type UiZoomPercent } from "@/lib/uiZoom";
 import { THEMES } from "@/themes";
-import { Link } from "react-router";
-import { useInstalledPlugins } from "@/hooks/usePlugins";
-import { localized, type LocalizedText } from "@/plugins/manifest";
 import type { UpdateSource } from "@/types";
 import type { SettingsForm } from "./useSettingsForm";
 import { useWizard } from "@/components/onboarding/wizardStore";
@@ -40,10 +37,8 @@ const DESKTOP_NOTIFY_EVENTS = [
 
 /** 通用: 语言 / 开机自启 / 更新源 / 自动检查更新, 外观 (界面主题 / 明暗模式), 桌面通知. */
 export function GeneralTab({ form }: { form: SettingsForm }) {
-  const { t, locale } = useT();
+  const { t } = useT();
   const { mode, setMode, themeId, setThemeId } = useTheme();
-  const plugins = useInstalledPlugins();
-  const pluginThemes = (plugins.data ?? []).filter((p) => p.plugin_type === "theme");
   const zoom = useUiZoom();
   const wizard = useWizard();
   const onboarding = useOnboardingState();
@@ -185,30 +180,7 @@ export function GeneralTab({ form }: { form: SettingsForm }) {
               ))}
             </div>
           </div>
-          <div className="setting-row">
-            <div className="label-col">
-              {t("settings.appearance.pluginThemes")}
-              <div className="desc">
-                <Link to="/plugins">{t("settings.appearance.managePlugins")}</Link>
-              </div>
-            </div>
-            {pluginThemes.length === 0 ? (
-              <div className="field-hint">{t("settings.appearance.noPluginThemes")}</div>
-            ) : (
-              <div className="radio-group" role="radiogroup" aria-label={t("settings.appearance.pluginThemes")} style={{ display: "flex", flexWrap: "wrap", maxWidth: 380 }}>
-                {pluginThemes.map((p) => {
-                  const id = `plugin:${p.id}` as const;
-                  const name = (p.manifest as { name?: LocalizedText } | null)?.name;
-                  return (
-                    <button key={p.id} type="button" className={themeId === id ? "on" : ""} onClick={() => setThemeId(id)} role="radio" aria-checked={themeId === id}>
-                      {localized(name, locale) || p.id}
-                      {p.source.kind === "community" && <span className="src-tag">{t("plugins.source.community")}</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* 插件中心入口已按需屏蔽 (用户不使用插件) */}
           <div className="setting-row">
             <div className="label-col">{t("settings.appearance.mode.label")}</div>
             <div
@@ -331,8 +303,7 @@ export function GeneralTab({ form }: { form: SettingsForm }) {
             <div className="label-col">
               {t("settings.notifications.test.label")}
               <div className="desc">
-                {t("settings.notifications.pluginsHint")}{" "}
-                <Link to="/plugins">{t("settings.notifications.managePlugins")}</Link>
+                {/* 插件中心入口已按需屏蔽 */}
               </div>
               {notifyTestState && (
                 <div className="desc" style={{ color: notifyTestState.ok ? "var(--ok)" : "var(--err)" }}>

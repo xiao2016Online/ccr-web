@@ -1,4 +1,3 @@
-import { Link } from "react-router";
 import { useT } from "@/i18n";
 import { fmtNum } from "@/lib/format";
 import { equivalentParts, spendParts } from "@/lib/cost";
@@ -16,18 +15,8 @@ export function CostCard({ data, loading, errorText }: { data: CostSummaryDto | 
   const installed = useInstalledPlugins();
   if (!data) return null;
 
-  if (!data.has_pricing) {
-    return (
-      <section className="card sx-cost-hint">
-        <div className="card-body">
-          <span>{t("stats.cost.noPricing")}</span>
-          <Link className="btn sm" to="/plugins">
-            {t("stats.cost.getPricing")}
-          </Link>
-        </div>
-      </section>
-    );
-  }
+  // 服务器版不引导去插件页 (插件中心入口已按需屏蔽); 没有计价插件就不显示这张卡
+  if (!data.has_pricing) return null;
 
   const nameOf = (id: string) => {
     const m = installed.data?.find((p) => p.id === id)?.manifest as { name?: LocalizedText } | undefined;

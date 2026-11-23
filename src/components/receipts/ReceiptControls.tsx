@@ -4,7 +4,6 @@ import { useT } from "@/i18n";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 import type { ReceiptRange, SubscriptionDto } from "@/types";
 import { isClassicTheme, type ReceiptDisplayOptions, type ReceiptTheme } from "./ReceiptSlip";
-import { Link } from "react-router";
 import { useInstalledPlugins } from "@/hooks/usePlugins";
 import { localized, type LocalizedText } from "@/plugins/manifest";
 
@@ -184,9 +183,6 @@ export function ReceiptControls({
                 </button>
               );
             })}
-          </div>
-          <div className="receipt-field-desc">
-            <Link to="/plugins">{t("receipts.plugin.more")}</Link>
           </div>
           <div className="receipt-field-desc">
             {t("receipts.controls.display.theme.desc")}

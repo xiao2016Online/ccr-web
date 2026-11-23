@@ -135,13 +135,7 @@ export function Sidebar() {
     { to: "/request-logs", label: t("sidebar.nav.requestLogs"), icon: "logs" },
     { to: "/statistics", label: t("sidebar.nav.statistics"), icon: "stats" },
     { to: "/receipts", label: t("sidebar.nav.receipts"), icon: "receipts" },
-    // 插件中心: 网页端可查看 / 使用已安装插件, 安装卸载仅桌面窗口
-    {
-      to: "/plugins",
-      label: t("sidebar.nav.pluginsTitle"),
-      title: t("sidebar.nav.pluginsTitle"),
-      icon: "plugins",
-    },
+    // 插件中心入口已按需屏蔽 (用户不使用插件); 路由保留, 避免其它引用报错
     // 应用内更新是桌面专属; 服务器版升级 = 拉取新镜像, 不显示该入口
     ...(runtime.kind === "desktop"
       ? [
