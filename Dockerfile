@@ -54,6 +54,9 @@ WORKDIR /app
 # 所以占位 lib/bin 即可覆盖完整依赖树。
 COPY src-tauri/Cargo.toml src-tauri/Cargo.lock ./src-tauri/
 COPY src-tauri/crates ./src-tauri/crates
+# 厂商描述 schema 由 cc-router-plugin-spec 在编译期 include_str 进来
+# (../../../../providers/_schema.json), 依赖缓存层必须一起带上, 否则该 crate 编译失败。
+COPY src-tauri/providers ./src-tauri/providers
 RUN mkdir -p src-tauri/src/bin \
     && echo "pub fn placeholder() {}" > src-tauri/src/lib.rs \
     && echo "fn main() {}" > src-tauri/src/bin/ccr-server.rs
